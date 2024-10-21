@@ -51,7 +51,7 @@ Antes de comenzar, asegúrate de tener instalado:
 
 2. Configura el servicio:
    ```bash
-   nssm install LaravelServer "C:\PHP\php.exe" "C:\ruta-proyecto\artisan" "serve" "--host=192.168.1.233" "--port=8000"
+   nssm install LaravelServer "C:\PHP\php.exe" "C:\ruta-proyecto\artisan" "serve" "--host=0.0.0.0" "--port=0000"
    ```
 
 3. Inicia el servicio:
@@ -59,13 +59,17 @@ Antes de comenzar, asegúrate de tener instalado:
    nssm start LaravelServer
    ```
 
-Accede a la aplicación en: http://192.168.1.233:8000
+Accede a la aplicación en: http://0.0.0.0:0000
 
 ## Notas adicionales
 
 - Revisa logs en `storage/logs/laravel.log`
 - Para detener: `nssm stop LaravelServer`
 - Para eliminar: `nssm remove LaravelServer confirm`
+- Para reiniciar: `nssm restart LaravelServer`
+- Para ver el estado: `nssm status LaravelServer`
+- Para editar la configuración: `nssm edit LaravelServer`
+- Para ver los parámetros: `nssm get LaravelServer`
 
 ## Créditos
 
