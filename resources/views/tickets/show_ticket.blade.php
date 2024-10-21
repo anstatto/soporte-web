@@ -13,9 +13,18 @@
                     <span class="text-sm font-semibold text-gray-600">Departamento:</span>
                     <span class="ml-2 text-sm text-gray-800">{{ $ticket->departamento->nombre }}</span>
                 </div>
+                @php
+                    $hexColor = ltrim($ticket->estado->color, '#');
+                    $r = hexdec(substr($hexColor, 0, 2));
+                    $g = hexdec(substr($hexColor, 2, 2));
+                    $b = hexdec(substr($hexColor, 4, 2));
+                    $luminance = (0.299 * $r + 0.587 * $g + 0.114 * $b) / 255;
+                @endphp
                 <div>
                     <span class="text-sm font-semibold text-gray-600">Estado:</span>
-                    <span class="ml-2 px-2 inline-flex text-xs leading-5 font-semibold rounded-full" style="background-color: {{ $ticket->estado->color }}; color: {{ $contrastColor }};">
+                    <span class="ml-2 px-2 inline-flex text-xs leading-5 font-semibold rounded-full
+                         {{ $luminance > 0.5 ? 'text-black' : 'text-white' }}"
+                          style="background-color: {{ $ticket->estado->color }};">
                         {{ $ticket->estado->nombre }}
                     </span>
                 </div>
@@ -74,3 +83,4 @@
     </a>
 </div>
 @endsection
+

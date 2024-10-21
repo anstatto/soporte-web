@@ -7,9 +7,16 @@ use Illuminate\Http\Request;
 
 class DepartamentoController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $departamentos = Departamento::all();
+        $query = Departamento::query();
+
+        if ($request->has('search')) {
+            $query->whereRaw('LOWER(nombre) LIKE ?', ['%' . strtolower($request->search) . '%']);
+        }
+
+        $departamentos = $query->paginate(10);
+
         return view('departamentos.index_departamento', compact('departamentos'));
     }
 

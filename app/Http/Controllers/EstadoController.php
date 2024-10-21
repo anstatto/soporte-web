@@ -7,9 +7,16 @@ use Illuminate\Http\Request;
 
 class EstadoController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $estados = Estado::all();
+        $query = Estado::query();
+
+        if ($request->has('search')) {
+            $query->whereRaw('LOWER(nombre) LIKE ?', ['%' . strtolower($request->search) . '%']);
+        }
+
+        $estados = $query->paginate(10);
+
         return view('estados.index_estado', compact('estados'));
     }
 

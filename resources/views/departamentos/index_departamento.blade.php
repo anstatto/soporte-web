@@ -17,6 +17,10 @@
         </a>
     </div>
 
+    <form method="GET" action="{{ route('departamentos.index') }}" class="mb-6">
+        <input type="text" name="search" placeholder="Buscar por nombre" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" value="{{ request('search') }}">
+    </form>
+
     <div class="bg-white shadow-lg rounded-lg overflow-hidden">
         <table class="min-w-full leading-normal">
             <thead>
@@ -63,6 +67,10 @@
                 @endforeach
             </tbody>
         </table>
+    </div>
+
+    <div class="mt-6">
+        {{ $departamentos->appends(request()->input())->links() }}
     </div>
 </div>
 @endsection
