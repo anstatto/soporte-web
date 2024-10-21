@@ -2,23 +2,27 @@
 
 @section('content')
 <div class="container mx-auto px-4">
-    <div class="flex justify-center">
+    <div class="flex justify-center items-center min-h-screen bg-gray-100">
         <div class="w-full max-w-md">
-            <div class="bg-white shadow-md rounded-lg">
-                <div class="bg-gray-200 px-6 py-4 rounded-t-lg">{{ __('Verify Your Email Address') }}</div>
+            <div class="bg-white shadow-lg rounded-lg overflow-hidden">
+                <div class="bg-gradient-to-r from-purple-400 to-pink-500 px-6 py-4">
+                    <h2 class="text-white text-2xl font-bold">{{ __('Verifica tu dirección de correo electrónico') }}</h2>
+                </div>
 
-                <div class="px-6 py-4">
+                <div class="px-6 py-8">
                     @if (session('resent'))
                         <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative" role="alert">
-                            {{ __('A fresh verification link has been sent to your email address.') }}
+                            {{ __('Se ha enviado un nuevo enlace de verificación a tu dirección de correo electrónico.') }}
                         </div>
                     @endif
 
-                    <p class="mb-4">{{ __('Before proceeding, please check your email for a verification link.') }}</p>
-                    <p class="mb-4">{{ __('If you did not receive the email') }},</p>
+                    <p class="mb-4 text-gray-700">{{ __('Antes de continuar, por favor revisa tu correo electrónico para un enlace de verificación.') }}</p>
+                    <p class="mb-4 text-gray-700">{{ __('Si no recibiste el correo electrónico') }},</p>
                     <form class="inline" method="POST" action="{{ route('verification.resend') }}">
                         @csrf
-                        <button type="submit" class="text-blue-500 hover:text-blue-700">{{ __('click here to request another') }}</button>.
+                        <button type="submit" class="bg-gradient-to-r from-purple-400 to-pink-500 hover:from-purple-600 hover:to-pink-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
+                            {{ __('haz clic aquí para solicitar otro') }}
+                        </button>
                     </form>
                 </div>
             </div>

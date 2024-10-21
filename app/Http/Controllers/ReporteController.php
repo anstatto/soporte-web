@@ -24,8 +24,8 @@ class ReporteController extends Controller
             ? Carbon::parse($request->input('fecha_fin'))
             : Carbon::today()->setHour(18)->setMinute(0)->setSecond(0);
 
-        // Obtener tickets filtrados
-        $tickets = $this->getFilteredTickets($request, $fechaInicio, $fechaFin);
+        // Obtener tickets filtrados y paginados
+        $tickets = $this->getFilteredTickets($request, $fechaInicio, $fechaFin)->paginate(10);
 
         // Agrupar tickets por usuario
         $ticketsPorUsuario = $tickets->groupBy('user_id');
@@ -40,9 +40,14 @@ class ReporteController extends Controller
     {
         $fechaInicio = Carbon::parse($request->input('fecha_inicio'));
         $fechaFin = Carbon::parse($request->input('fecha_fin'));
-        $tickets = $this->getFilteredTickets($request, $fechaInicio, $fechaFin);
-        $ticketsPorUsuario = $tickets->groupBy('user_id');
+        $userId = $request->input('user_id');
         $tipoReporte = $request->input('tipo_reporte', 'basico');
+
+        $tickets = $this->getFilteredTickets($request, $fechaInicio, $fechaFin);
+        if ($userId) {
+            $tickets = $tickets->where('user_id', $userId);
+        }
+        $ticketsPorUsuario = $tickets->get()->groupBy('user_id');
 
         $view = view("reportes.print.{$tipoReporte}", compact('ticketsPorUsuario', 'fechaInicio', 'fechaFin'))->render();
         return response()->json(['html' => $view]);
@@ -57,7 +62,7 @@ class ReporteController extends Controller
         $tipoReporte = $request->input('tipo_reporte', 'basico');
         switch ($format) {
             case 'excel':
-                $export = new TicketsExport($tickets, $tipoReporte);
+                $export = new TicketsExport($tickets->get(), $tipoReporte);
                 return $export->export('reporte_soportes.xlsx');
             case 'csv':
                 return $this->exportarCSV($tickets, $tipoReporte);
@@ -99,23 +104,21 @@ class ReporteController extends Controller
 
     private function generarPDF($tickets, $tipoReporte)
     {
-        $ticketsPorUsuario = $tickets->groupBy('user_id');
-        $pdf = PDF::loadView("reportes.pdf.{$tipoReporte}", compact('ticketsPorUsuario'));
+        $ticketsPorUsuario = $tickets->get()->groupBy('user_id');
+        $fechaInicio = $tickets->min('created_at');
+        $fechaFin = $tickets->max('created_at');
+        $pdf = PDF::loadView("reportes.print.{$tipoReporte}", compact('ticketsPorUsuario', 'fechaInicio', 'fechaFin'));
         return $pdf->download('reporte_soportes.pdf');
     }
 
-    private function getFilteredTickets(Request $request, $fechaInicio, $fechaFin)
+    private function getFilteredTickets($request, $fechaInicio, $fechaFin)
     {
-        $query = Ticket::with(['user', 'estado', 'departamento'])
+        return Ticket::with(['user', 'departamento', 'estado'])
             ->whereBetween('created_at', [$fechaInicio, $fechaFin])
-            ->orderBy('user_id')
-            ->orderBy('created_at', 'desc');
-
-        if ($request->filled('user_id')) {
-            $query->where('user_id', $request->user_id);
-        }
-
-        return $query->get();
+            ->when($request->filled('user_id'), function ($query) use ($request) {
+                return $query->where('user_id', $request->user_id);
+            })
+            ->latest();
     }
 
     private function getTiposReporte()

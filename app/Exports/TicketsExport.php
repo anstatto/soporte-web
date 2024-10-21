@@ -30,16 +30,11 @@ class TicketsExport
             'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
         ];
 
-        switch ($this->tipoReporte) {
-            case 'basico':
-                $this->exportarBasico($sheet, $headerStyle);
-                break;
-            case 'detallado':
-                $this->exportarDetallado($sheet, $headerStyle);
-                break;
-            case 'estadistico':
-                $this->exportarEstadistico($sheet, $headerStyle);
-                break;
+        $exportMethod = 'exportar' . ucfirst($this->tipoReporte);
+        if (method_exists($this, $exportMethod)) {
+            $this->$exportMethod($sheet, $headerStyle);
+        } else {
+            throw new \Exception("Tipo de reporte no soportado");
         }
 
         $writer = new Xlsx($spreadsheet);
@@ -51,8 +46,7 @@ class TicketsExport
     private function exportarBasico($sheet, $headerStyle)
     {
         $headers = ['ID', 'Usuario', 'Título', 'Estado', 'Fecha de creación'];
-        $sheet->fromArray([$headers], NULL, 'A1');
-        $sheet->getStyle('A1:E1')->applyFromArray($headerStyle);
+        $this->setHeaders($sheet, $headers, $headerStyle);
 
         $row = 2;
         foreach ($this->tickets as $ticket) {
@@ -66,16 +60,13 @@ class TicketsExport
             $row++;
         }
 
-        foreach(range('A','E') as $col) {
-            $sheet->getColumnDimension($col)->setAutoSize(true);
-        }
+        $this->autoSizeColumns($sheet, 'A', 'E');
     }
 
     private function exportarDetallado($sheet, $headerStyle)
     {
         $headers = ['ID', 'Usuario', 'Título', 'Descripción', 'Departamento', 'Estado', 'Fecha de creación', 'Última actualización'];
-        $sheet->fromArray([$headers], NULL, 'A1');
-        $sheet->getStyle('A1:H1')->applyFromArray($headerStyle);
+        $this->setHeaders($sheet, $headers, $headerStyle);
 
         $row = 2;
         foreach ($this->tickets as $ticket) {
@@ -92,16 +83,13 @@ class TicketsExport
             $row++;
         }
 
-        foreach(range('A','H') as $col) {
-            $sheet->getColumnDimension($col)->setAutoSize(true);
-        }
+        $this->autoSizeColumns($sheet, 'A', 'H');
     }
 
     private function exportarEstadistico($sheet, $headerStyle)
     {
         $headers = ['Estado', 'Cantidad', 'Porcentaje'];
-        $sheet->fromArray([$headers], NULL, 'A1');
-        $sheet->getStyle('A1:C1')->applyFromArray($headerStyle);
+        $this->setHeaders($sheet, $headers, $headerStyle);
 
         $ticketsPorEstado = $this->tickets->groupBy('estado.nombre');
         $totalTickets = $this->tickets->count();
@@ -118,8 +106,24 @@ class TicketsExport
             $row++;
         }
 
-        foreach(range('A','C') as $col) {
+        $this->autoSizeColumns($sheet, 'A', 'C');
+    }
+
+    private function setHeaders($sheet, $headers, $headerStyle)
+    {
+        $sheet->fromArray([$headers], NULL, 'A1');
+        $sheet->getStyle('A1:' . $this->getColumnLetter(count($headers)) . '1')->applyFromArray($headerStyle);
+    }
+
+    private function autoSizeColumns($sheet, $startColumn, $endColumn)
+    {
+        foreach(range($startColumn, $endColumn) as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
+    }
+
+    private function getColumnLetter($columnNumber)
+    {
+        return \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($columnNumber);
     }
 }

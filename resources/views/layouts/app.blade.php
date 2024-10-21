@@ -4,10 +4,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ config('app.name', 'RM Consuegra SRL') }}</title>
+    <title>RM Consuegra SRL Soporte</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
-
 </head>
 <body class="bg-gray-100 min-h-screen font-sans antialiased">
     <div id="app" class="flex flex-col min-h-screen">
@@ -15,8 +14,9 @@
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex justify-between h-16">
                     <div class="flex items-center">
-                        <a href="{{ url('/') }}" class="flex-shrink-0 flex items-center">
-                            <span class="text-2xl font-bold text-blue-600">{{ config('app.name', 'RM Consuegra SRL') }}</span>
+                        <a href="{{ url('/') }}" class="flex-shrink-0 flex items-center group">
+                            <img src="{{ asset('images/LogoMono.png') }}" alt="Logo" class="h-8 w-auto mr-2 transition-transform duration-1000 group-hover:rotate-360 transform hover:scale-125 hover:rotate-360">
+                            <span class="text-xl font-bold text-blue-600 transition-colors duration-1000 group-hover:text-purple-600">RM Consuegra SRL Soporte</span>
                         </a>
                     </div>
                     <div class="flex items-center">
@@ -53,7 +53,7 @@
         </nav>
 
         @auth
-        <div class="bg-blue-600 shadow-md">
+        <div class="bg-gradient-to-r from-blue-500 to-purple-500 shadow-md">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex space-x-8 py-3">
                     <a href="{{ route('home') }}" class="text-white hover:bg-blue-700 px-3 py-2 rounded-md text-sm font-medium">Dashboard</a>
@@ -75,10 +75,11 @@
         <footer class="bg-white shadow-md mt-8">
             <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
                 <p class="text-center text-sm text-gray-500">
-                    &copy; {{ date('Y') }} {{ config('app.name', 'Laravel') }}. Todos los derechos reservados.
+                    &copy; {{ date('Y') }} {{ config('app.name', 'RM Consuegra SRL Soporte') }}. Todos los derechos reservados.
                 </p>
             </div>
         </footer>
     </div>
+    @stack('scripts')
 </body>
 </html>

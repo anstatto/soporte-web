@@ -9,7 +9,9 @@ class Ticket extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['titulo', 'descripcion', 'user_id', 'departamento_id', 'estado_id'];
+    protected $fillable = ['titulo', 'descripcion', 'departamento_id', 'estado_id'];
+
+    protected $with = ['user', 'departamento', 'estado'];
 
     public function user()
     {
@@ -46,12 +48,12 @@ class Ticket extends Model
         return $this->user->name;
     }
 
-    public function getTiempoAbierto()
+    public function getTiempoAbiertoAttribute()
     {
         return $this->created_at->diffForHumans();
     }
 
-    public function estaAbierto()
+    public function getEstaAbiertoAttribute()
     {
         return $this->estado->nombre !== 'Cerrado';
     }
