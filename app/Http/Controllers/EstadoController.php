@@ -22,7 +22,7 @@ class EstadoController extends Controller
     {
         $request->validate([
             'nombre' => 'required|string|max:255|unique:estados',
-            'color' => 'required|string|max:7',
+            'color' => 'required|string|max:7', // Asegúrate de que el color sea validado correctamente
         ]);
 
         Estado::create($request->all());
@@ -44,7 +44,7 @@ class EstadoController extends Controller
     {
         $request->validate([
             'nombre' => 'required|string|max:255|unique:estados,nombre,' . $estado->id,
-            'color' => 'required|string|max:7',
+            'color' => 'required|string|max:7', // Asegúrate de que el color sea validado correctamente
         ]);
 
         $estado->update($request->all());
