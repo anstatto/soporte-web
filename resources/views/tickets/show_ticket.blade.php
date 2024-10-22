@@ -58,6 +58,9 @@
             <div class="mb-4 pb-4 border-b border-gray-200">
                 <p class="text-gray-800">{{ $comentario->contenido }}</p>
                 <p class="text-sm text-gray-600 mt-1">Por {{ $comentario->user->name }} - {{ $comentario->created_at->diffForHumans() }}</p>
+                @if(Auth::id() === $comentario->user_id)
+                    <a href="{{ route('comentarios.edit', $comentario) }}" class="text-blue-500 hover:text-blue-700">Editar</a>
+                @endif
             </div>
             @endforeach
 
@@ -83,4 +86,3 @@
     </a>
 </div>
 @endsection
-

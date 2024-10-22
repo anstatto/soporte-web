@@ -13,14 +13,16 @@
                     <form method="POST" action="{{ route('login') }}">
                         @csrf
 
+                        <!-- Campo de nombre de usuario -->
                         <div class="mb-6">
-                            <label for="name" class="block text-gray-700 text-sm font-semibold mb-2">{{ __('Nombre de usuario') }}</label>
-                            <input id="name" type="text" class="shadow appearance-none border rounded w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:shadow-outline @error('name') border-red-500 @enderror" name="name" value="{{ old('name') }}" required autocomplete="name" autofocus>
-                            @error('name')
+                            <label for="username" class="block text-gray-700 text-sm font-semibold mb-2">{{ __('Usuario') }}</label>
+                            <input id="username" type="text" class="shadow appearance-none border rounded w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:shadow-outline @error('username') border-red-500 @enderror" name="username" value="{{ old('username') }}" required autocomplete="username" autofocus>
+                            @error('username')
                                 <p class="text-red-500 text-xs italic mt-2">{{ $message }}</p>
                             @enderror
                         </div>
 
+                        <!-- Campo de contraseña -->
                         <div class="mb-6">
                             <label for="password" class="block text-gray-700 text-sm font-semibold mb-2">{{ __('Contraseña') }}</label>
                             <input id="password" type="password" class="shadow appearance-none border rounded w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:shadow-outline @error('password') border-red-500 @enderror" name="password" required autocomplete="current-password">

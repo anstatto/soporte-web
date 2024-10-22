@@ -21,8 +21,10 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'email',
-        'password',
+        'password', // Si permites cambiar la contraseña, maneja esto con cuidado
         'departamento_id',
+        'username',
+        // Agrega otros campos que desees permitir que el usuario edite
     ];
 
     /**

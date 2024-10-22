@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Models\Estado;
 use App\Exports\TicketsExport;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
@@ -14,6 +15,7 @@ class ReporteController extends Controller
     public function index(Request $request)
     {
         $users = User::all();
+        $estados = Estado::all(); // Asegúrate de obtener todos los estados
 
         // Establecer fechas por defecto si no se proporcionan
         $fechaInicio = $request->input('fecha_inicio')
@@ -33,7 +35,7 @@ class ReporteController extends Controller
         // Obtener tipos de reporte
         $tiposReporte = $this->getTiposReporte();
 
-        return view('reportes.index', compact('users', 'tickets', 'ticketsPorUsuario', 'tiposReporte', 'fechaInicio', 'fechaFin'));
+        return view('reportes.index', compact('users', 'tickets', 'ticketsPorUsuario', 'tiposReporte', 'fechaInicio', 'fechaFin', 'estados'));
     }
 
     public function imprimir(Request $request)
@@ -41,11 +43,15 @@ class ReporteController extends Controller
         $fechaInicio = Carbon::parse($request->input('fecha_inicio'));
         $fechaFin = Carbon::parse($request->input('fecha_fin'));
         $userId = $request->input('user_id');
+        $estadoId = $request->input('estado_id'); // Asegúrate de recibir el estado_id
         $tipoReporte = $request->input('tipo_reporte', 'basico');
 
         $tickets = $this->getFilteredTickets($request, $fechaInicio, $fechaFin);
         if ($userId) {
             $tickets = $tickets->where('user_id', $userId);
+        }
+        if ($estadoId) {
+            $tickets = $tickets->where('estado_id', $estadoId); // Aplicar el filtro de estado
         }
         $ticketsPorUsuario = $tickets->get()->groupBy('user_id');
 
@@ -57,7 +63,11 @@ class ReporteController extends Controller
     {
         $fechaInicio = Carbon::parse($request->input('fecha_inicio'));
         $fechaFin = Carbon::parse($request->input('fecha_fin'));
+        $estadoId = $request->input('estado_id'); // Añadir el filtro de estado
         $tickets = $this->getFilteredTickets($request, $fechaInicio, $fechaFin);
+        if ($estadoId) {
+            $tickets = $tickets->where('estado_id', $estadoId); // Aplicar el filtro de estado
+        }
         $format = $request->input('format', 'pdf');
         $tipoReporte = $request->input('tipo_reporte', 'basico');
         switch ($format) {
@@ -117,6 +127,9 @@ class ReporteController extends Controller
             ->whereBetween('created_at', [$fechaInicio, $fechaFin])
             ->when($request->filled('user_id'), function ($query) use ($request) {
                 return $query->where('user_id', $request->user_id);
+            })
+            ->when($request->filled('estado_id'), function ($query) use ($request) {
+                return $query->where('estado_id', $request->estado_id);
             })
             ->latest();
     }

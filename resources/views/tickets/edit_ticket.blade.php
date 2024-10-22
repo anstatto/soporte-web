@@ -61,6 +61,18 @@
                 @endif
             </p>
         </div>
+        <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-bold mb-2" for="user_id">
+                Asignar a Usuario
+            </label>
+            <select class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="user_id" name="user_id" required>
+                @foreach($usuarios as $usuario)
+                    <option value="{{ $usuario->id }}" {{ $ticket->user_id == $usuario->id ? 'selected' : '' }}>
+                        {{ $usuario->name }}
+                    </option>
+                @endforeach
+            </select>
+        </div>
         <div class="flex items-center justify-between">
             <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" type="submit">
                 Actualizar Ticket

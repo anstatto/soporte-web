@@ -37,6 +37,17 @@
                     @endforeach
                 </select>
             </div>
+            <div class="w-full md:w-1/4 px-3 mb-6 md:mb-0">
+                <label class="block uppercase tracking-wide text-gray-700 text-xs font-bold mb-2" for="estado_id">
+                    Estado
+                </label>
+                <select id="estado_id" name="estado_id" class="block appearance-none w-full bg-gray-200 border border-gray-200 text-gray-700 py-3 px-4 pr-8 rounded leading-tight focus:outline-none focus:bg-white focus:border-gray-500">
+                    <option value="">Todos los estados</option>
+                    @foreach($estados as $estado)
+                        <option value="{{ $estado->id }}" {{ request('estado_id') == $estado->id ? 'selected' : '' }}>{{ $estado->nombre }}</option>
+                    @endforeach
+                </select>
+            </div>
             <div class="w-full md:w-1/4 px-3 mb-6 md:mb-0 flex items-end">
                 <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline-block mr-1" viewBox="0 0 20 20" fill="currentColor">
@@ -140,6 +151,7 @@ window.imprimirReporte = function() {
     const fechaInicio = document.querySelector('input[name="fecha_inicio"]').value;
     const fechaFin = document.querySelector('input[name="fecha_fin"]').value;
     const userId = document.querySelector('select[name="user_id"]').value;
+    const estadoId = document.querySelector('select[name="estado_id"]').value;
 
     const formData = new FormData();
     formData.append('_token', '{{ csrf_token() }}');
@@ -147,6 +159,7 @@ window.imprimirReporte = function() {
     formData.append('fecha_inicio', fechaInicio);
     formData.append('fecha_fin', fechaFin);
     formData.append('user_id', userId);
+    formData.append('estado_id', estadoId);
 
     fetch('{{ route('reportes.imprimir') }}', {
         method: 'POST',

@@ -9,6 +9,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use App\Notifications\TicketAssignedNotification;
+use App\Models\User;
 
 class TicketController extends Controller
 {
@@ -91,48 +93,81 @@ class TicketController extends Controller
             'estado_id' => 'required|exists:estados,id',
         ]);
 
-        // Asegúrate de que el usuario esté autenticado
-        if (!Auth::check()) {
-            return redirect()->route('login')->with('error', 'Debes iniciar sesión para crear un ticket.');
-        }
-
-        // Agrega el user_id al array de datos validados
         $validatedData['user_id'] = Auth::id();
 
         $ticket = Ticket::create($validatedData);
 
-        return redirect()->route('tickets.show', $ticket)->with('success', 'Ticket creado exitosamente.');
+        // Notificar al usuario asignado
+        $this->assignTicket($ticket);
+
+        session()->flash('success', 'Ticket creado exitosamente.');
+
+        return redirect()->route('tickets.show', $ticket);
     }
 
     public function show(Ticket $ticket)
     {
+        // Marcar la notificación como leída
+        Auth::user()->unreadNotifications
+            ->where('data.ticket_id', $ticket->id)
+            ->markAsRead();
+
         $ticket->load(['user', 'departamento', 'estado', 'comentarios.user']);
         return view('tickets.show_ticket', compact('ticket'));
     }
 
     public function edit(Ticket $ticket)
     {
+        // Verifica si el usuario autenticado es el creador del ticket
+        if (Auth::id() !== $ticket->user_id) {
+            return redirect()->route('tickets.index')->with('error', 'No tienes permiso para editar este ticket.');
+        }
+
         $departamentos = Departamento::all();
         $estados = Estado::all();
-        return view('tickets.edit_ticket', compact('ticket', 'departamentos', 'estados'));
+        $usuarios = User::all(); // Obtener todos los usuarios para cambiar la asignación
+        return view('tickets.edit_ticket', compact('ticket', 'departamentos', 'estados', 'usuarios'));
     }
 
     public function update(Request $request, Ticket $ticket)
     {
+        // Verifica si el usuario autenticado es el creador del ticket
+        if (Auth::id() !== $ticket->user_id) {
+            return redirect()->route('tickets.index')->with('error', 'No tienes permiso para actualizar este ticket.');
+        }
+
         $validatedData = $request->validate([
             'titulo' => 'required|string|max:255',
             'descripcion' => 'required|string',
             'departamento_id' => 'required|exists:departamentos,id',
             'estado_id' => 'required|exists:estados,id',
+            'user_id' => 'required|exists:users,id',
         ]);
 
         $ticket->update($validatedData);
-        return redirect()->route('tickets.show', $ticket)->with('success', 'Ticket actualizado exitosamente.');
+
+        // Notificar al usuario asignado
+        $this->assignTicket($ticket);
+
+        session()->flash('success', 'Ticket actualizado exitosamente.');
+
+        return redirect()->route('tickets.show', $ticket);
     }
 
     public function destroy(Ticket $ticket)
     {
         $ticket->delete();
-        return redirect()->route('tickets.index')->with('success', 'Ticket eliminado exitosamente.');
+
+        // Establecer mensaje flash
+        session()->flash('success', 'Ticket eliminado exitosamente.');
+
+        return redirect()->route('tickets.index');
+    }
+
+    // Cuando se asigna un ticket
+    public function assignTicket(Ticket $ticket)
+    {
+        $user = User::find($ticket->user_id);
+        $user->notify(new TicketAssignedNotification($ticket));
     }
 }

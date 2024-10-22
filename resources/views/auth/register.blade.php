@@ -13,6 +13,15 @@
                     <form method="POST" action="{{ route('register') }}">
                         @csrf
 
+                        <!-- Campo de nombre de usuario -->
+                        <div class="mb-6">
+                            <label for="username" class="block text-gray-700 text-sm font-semibold mb-2">{{ __('Nombre de Usuario') }}</label>
+                            <input id="username" type="text" class="shadow appearance-none border rounded w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:shadow-outline @error('username') border-red-500 @enderror" name="username" value="{{ old('username') }}" required autocomplete="username">
+                            @error('username')
+                                <p class="text-red-500 text-xs italic mt-2">{{ $message }}</p>
+                            @enderror
+                        </div>
+
                         <div class="mb-6">
                             <label for="name" class="block text-gray-700 text-sm font-semibold mb-2">{{ __('Nombre') }}</label>
                             <input id="name" type="text" class="shadow appearance-none border rounded w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:shadow-outline @error('name') border-red-500 @enderror" name="name" value="{{ old('name') }}" required autocomplete="name" autofocus>
