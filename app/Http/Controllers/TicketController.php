@@ -16,53 +16,45 @@ class TicketController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Ticket::with(['user', 'departamento', 'estado']);
+        $query = Ticket::with(['departamento', 'estado', 'users']); // Cargar relaciones anticipadamente
 
-        // Filtros
-        if ($request->filled('titulo')) {
-            $query->where('titulo', 'like', '%' . $request->titulo . '%');
+        // Filtrar por fecha si se proporciona
+        if ($request->filled('fecha_inicio')) {
+            $fechaInicio = Carbon::parse($request->input('fecha_inicio'));
+            $query->whereDate('fecha_entrega', '>=', $fechaInicio);
         }
 
-        if ($request->filled('departamento_id')) {
-            $query->where('departamento_id', $request->departamento_id);
+        if ($request->filled('fecha_fin')) {
+            $fechaFin = Carbon::parse($request->input('fecha_fin'));
+            $query->whereDate('fecha_entrega', '<=', $fechaFin);
         }
 
-        if ($request->filled('estado_id')) {
-            $query->where('estado_id', $request->estado_id);
+        // Obtener tickets del día actual si no se filtra
+        if (!$request->filled('fecha_inicio') && !$request->filled('fecha_fin')) {
+            $query->whereDate('fecha_entrega', Carbon::today());
         }
 
-        // Filtro por rango de fechas
-        if ($request->filled('fecha_inicio') && $request->filled('fecha_fin')) {
-            $fechaInicio = Carbon::createFromFormat('Y-m-d\TH:i', $request->fecha_inicio)->startOfDay();
-            $fechaFin = Carbon::createFromFormat('Y-m-d\TH:i', $request->fecha_fin)->endOfDay();
-            $query->whereBetween('created_at', [$fechaInicio, $fechaFin]);
+        $tickets = $query->paginate(10);
+
+        // Mensaje si no hay tickets para el día actual
+        if ($tickets->isEmpty() && !$request->filled('fecha_inicio') && !$request->filled('fecha_fin')) {
+            session()->flash('message', 'No hay tickets registrados o creados el día de hoy.');
         }
 
-        // Ordenar
-        $orderBy = $request->get('order_by', 'created_at');
-        $orderDirection = $request->get('order_direction', 'desc');
-        $query->orderBy($orderBy, $orderDirection);
-
-        $tickets = $query->paginate(10)->appends($request->query());
-
+        // Obtener todos los departamentos y estados
         $departamentos = Departamento::all();
         $estados = Estado::all();
 
-        // Calcula los colores de contraste para cada ticket
-        $contrastColors = [];
-        foreach ($tickets as $ticket) {
-            $contrastColors[$ticket->id] = $this->getContrastColor($ticket->estado->color);
-        }
-
-        return view('tickets.index_ticket', compact('tickets', 'departamentos', 'estados', 'contrastColors'));
+        return view('tickets.index_ticket', compact('tickets', 'departamentos', 'estados'));
     }
 
     private function calculateContrastColors($tickets)
     {
         $contrastColors = [];
         foreach ($tickets as $ticket) {
-            $backgroundColor = $ticket->estado->color;
-            $contrastColors[$ticket->id] = $this->getContrastColor($backgroundColor);
+            // Aquí puedes definir la lógica para calcular el color de contraste
+            // Por ejemplo, puedes usar un color fijo o calcularlo basado en el estado
+            $contrastColors[$ticket->id] = '#FFFFFF'; // Color blanco como ejemplo
         }
         return $contrastColors;
     }
@@ -79,9 +71,11 @@ class TicketController extends Controller
 
     public function create()
     {
-        $departamentos = Departamento::all();
-        $estados = Estado::all();
-        return view('tickets.create_ticket', compact('departamentos', 'estados'));
+        $usuarios = User::all(); // Obtener todos los usuarios
+        $departamentos = Departamento::all(); // Obtener todos los departamentos
+        $estados = Estado::all(); // Obtener todos los estados
+
+        return view('tickets.create_ticket', compact('usuarios', 'departamentos', 'estados'));
     }
 
     public function store(Request $request)
@@ -91,18 +85,19 @@ class TicketController extends Controller
             'descripcion' => 'required|string',
             'departamento_id' => 'required|exists:departamentos,id',
             'estado_id' => 'required|exists:estados,id',
+            'fecha_entrega' => 'required|date',
+            'recordatorio' => 'required|date',
+            'user_ids' => 'array' // Asegúrate de que sea un array
         ]);
-
-        $validatedData['user_id'] = Auth::id();
 
         $ticket = Ticket::create($validatedData);
 
-        // Notificar al usuario asignado
-        $this->assignTicket($ticket);
+        // Asignar usuarios al ticket
+        if (isset($request->user_ids)) {
+            $ticket->users()->sync($request->user_ids);
+        }
 
-        session()->flash('success', 'Ticket creado exitosamente.');
-
-        return redirect()->route('tickets.show', $ticket);
+        return redirect()->route('tickets.index')->with('success', 'Ticket creado exitosamente.');
     }
 
     public function show(Ticket $ticket)
@@ -125,31 +120,37 @@ class TicketController extends Controller
 
         $departamentos = Departamento::all();
         $estados = Estado::all();
-        $usuarios = User::all(); // Obtener todos los usuarios para cambiar la asignación
+        $usuarios = User::all(); // Obtener todos los usuarios para cambiar la asignacin
         return view('tickets.edit_ticket', compact('ticket', 'departamentos', 'estados', 'usuarios'));
     }
 
     public function update(Request $request, Ticket $ticket)
     {
-        // Verifica si el usuario autenticado es el creador del ticket
-        if (Auth::id() !== $ticket->user_id) {
-            return redirect()->route('tickets.index')->with('error', 'No tienes permiso para actualizar este ticket.');
-        }
-
         $validatedData = $request->validate([
             'titulo' => 'required|string|max:255',
             'descripcion' => 'required|string',
             'departamento_id' => 'required|exists:departamentos,id',
             'estado_id' => 'required|exists:estados,id',
-            'user_id' => 'required|exists:users,id',
+            'fecha_entrega' => 'nullable|date',
+            'recordatorio' => 'nullable|date',
+            'user_ids' => 'array', // Aceptar múltiples usuarios
+            'user_ids.*' => 'exists:users,id', // Validar que cada ID de usuario exista
         ]);
 
+        // Convertir las fechas a instancias de Carbon
+        $validatedData['fecha_entrega'] = Carbon::parse($validatedData['fecha_entrega'] ?? now());
+        $validatedData['recordatorio'] = Carbon::parse($validatedData['recordatorio'] ?? now());
+
         $ticket->update($validatedData);
+        $ticket->users()->sync($request->input('user_ids')); // Sincronizar usuarios
 
-        // Notificar al usuario asignado
-        $this->assignTicket($ticket);
-
-        session()->flash('success', 'Ticket actualizado exitosamente.');
+        // Verificar si las fechas son iguales a la fecha de creación
+        if ($ticket->fecha_entrega->isSameDay($ticket->created_at) && $ticket->recordatorio->isSameDay($ticket->created_at)) {
+            session()->flash('success', 'Ticket actualizado exitosamente, pero no se envió notificación porque las fechas son iguales a la creación.');
+        } else {
+            $this->assignTicket($ticket);
+            session()->flash('success', 'Ticket actualizado exitosamente y se envió notificación.');
+        }
 
         return redirect()->route('tickets.show', $ticket);
     }

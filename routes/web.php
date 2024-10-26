@@ -9,13 +9,16 @@ use App\Http\Controllers\ComentarioController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\UserController; // Asegúrate de importar el controlador de usuario
 use Illuminate\Support\Facades\Auth;
+use App\Http\Controllers\RoleController;
+use Spatie\Permission\Middleware\RoleMiddleware; // Actualizar esta línea;
+
 
 Auth::routes();
 
 Route::get('/', [HomeController::class, 'index'])->name('home');
 
 Route::middleware(['auth'])->group(function () {
-    // Rutas de Tickets
+    // Rutas protegidas
     Route::resource('tickets', TicketController::class);
 
     // Rutas de Departamentos
@@ -40,6 +43,18 @@ Route::middleware(['auth'])->group(function () {
     // Ruta para el perfil del usuario
     Route::get('/perfil', [UserController::class, 'show'])->name('perfil.show');
     Route::put('/perfil', [UserController::class, 'update'])->name('perfil.update');
+
+    // Rutas de permisos y roles usando el middleware personalizado
+    Route::middleware([RoleMiddleware::class . ':admin'])->group(function () {
+        Route::get('roles/{id}/edit', [RoleController::class, 'edit'])->name('roles.edit');
+        Route::put('roles/{id}', [RoleController::class, 'update'])->name('roles.update');
+        Route::post('/roles', [RoleController::class, 'store'])->name('roles.store');
+        Route::get('/users/assign-roles', [UserController::class, 'showAssignRoles'])->name('users.showAssignRoles');
+        Route::post('/users/assign-roles', [UserController::class, 'assignRoles'])->name('users.assignRoles');
+        Route::get('/roles/create', [RoleController::class, 'create'])->name('roles.create');
+        Route::get('roles', [RoleController::class, 'index'])->name('roles.index');
+    });
+
 });
 
 Route::get('/reportes/pdf', [ReporteController::class, 'generarPDF'])->name('reportes.pdf');
@@ -47,6 +62,7 @@ Route::get('/reportes/pdf', [ReporteController::class, 'generarPDF'])->name('rep
 Route::get('/notifications', function () {
     return Auth::user()->unreadNotifications;
 })->middleware('auth');
+
 Route::post('/notifications/{id}/mark-as-read', function ($id) {
     $user = Auth::user();
     $notification = $user->unreadNotifications->find($id);
@@ -55,3 +71,5 @@ Route::post('/notifications/{id}/mark-as-read', function ($id) {
     }
     return response()->noContent();
 });
+
+

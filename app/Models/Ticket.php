@@ -9,9 +9,18 @@ class Ticket extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['titulo', 'descripcion', 'departamento_id', 'estado_id', 'user_id'];
+    protected $fillable = [
+        'titulo',
+        'descripcion',
+        'departamento_id',
+        'estado_id',
+        'user_id',
+        'fecha_entrega', // Nuevo campo
+        'recordatorio' // Nuevo campo
+    ];
 
     protected $with = ['user', 'departamento', 'estado'];
+    protected $dates = ['fecha_entrega', 'recordatorio'];
 
     public function user()
     {
@@ -56,5 +65,10 @@ class Ticket extends Model
     public function getEstaAbiertoAttribute()
     {
         return $this->estado->nombre !== 'Cerrado';
+    }
+
+    public function users()
+    {
+        return $this->belongsToMany(User::class);
     }
 }

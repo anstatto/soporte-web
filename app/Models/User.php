@@ -7,14 +7,15 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use App\Notifications\CustomResetPasswordNotification;
+use Spatie\Permission\Traits\HasRoles;
+use App\Models\Role; // Agrega esta línea para importar la clase Role
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;
+    use HasFactory, Notifiable, HasRoles;
 
     /**
-     * The attributes that are mass assignable.
+     * Los atributos que se pueden asignar masivamente.
      *
      * @var array<int, string>
      */
@@ -28,7 +29,7 @@ class User extends Authenticatable
     ];
 
     /**
-     * The attributes that should be hidden for serialization.
+     * Los atributos que deben estar ocultos para la serialización.
      *
      * @var array<int, string>
      */
@@ -38,7 +39,7 @@ class User extends Authenticatable
     ];
 
     /**
-     * Get the attributes that should be cast.
+     * Obtener los atributos que deben ser convertidos a tipos nativos.
      *
      * @return array<string, string>
      */
@@ -47,21 +48,41 @@ class User extends Authenticatable
         'password' => 'hashed',
     ];
 
+    /**
+     * Relación con los tickets.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
     public function tickets()
     {
         return $this->hasMany(Ticket::class);
     }
 
+    /**
+     * Relación con el departamento.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
     public function departamento()
     {
         return $this->belongsTo(Departamento::class);
     }
 
+    /**
+     * Relación con los comentarios.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
     public function comentarios()
     {
         return $this->hasMany(Comentario::class);
     }
 
+    /**
+     * Obtener el número de tickets abiertos.
+     *
+     * @return int
+     */
     public function getTicketsAbiertos()
     {
         return $this->tickets()->whereHas('estado', function ($query) {
@@ -69,14 +90,29 @@ class User extends Authenticatable
         })->count();
     }
 
+    /**
+     * Determinar si el usuario es administrador.
+     *
+     * @return bool
+     */
     public function esAdministrador()
     {
-        // Implementa la lógica para determinar si el usuario es administrador
-        return $this->role === 'admin';
+        return $this->hasRole('admin');
     }
 
+    /**
+     * Enviar notificación de restablecimiento de contraseña.
+     *
+     * @param string $token
+     * @return void
+     */
     public function sendPasswordResetNotification($token)
     {
         $this->notify(new CustomResetPasswordNotification($token));
+    }
+
+    public function roles()
+    {
+        return $this->belongsToMany(Role::class);
     }
 }
