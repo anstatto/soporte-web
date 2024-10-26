@@ -63,14 +63,7 @@
                     id="recordatorio" name="recordatorio" value="{{ now()->format('Y-m-d\TH:i') }}" required>
             </div>
             <div class="mb-4">
-                <label class="block text-gray-700 text-sm font-bold mb-2" for="user_ids">
-                    Asignar Usuarios
-                </label>
-                <user-select
-                    :users="{{ json_encode($usuarios) }}"
-                    @update:selected="updateSelectedUsers">
-                </user-select>
-                <input type="hidden" name="user_ids" :value="JSON.stringify(selectedUsers)">
+                <x-user-select :users="$usuarios" :selected-users="[]" />
             </div>
             <div class="flex items-center justify-between">
                 <button

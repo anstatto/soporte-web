@@ -16,6 +16,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'edit tickets',
             'delete tickets',
             'view tickets',
+            'assign tickets',
             'comment on tickets',
             'edit estado',
             'create estado',

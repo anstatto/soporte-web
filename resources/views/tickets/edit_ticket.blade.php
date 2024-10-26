@@ -73,14 +73,7 @@
             </div>
             @can('assign tickets')
                 <div class="mb-4">
-                    <label class="block text-gray-700 text-sm font-bold mb-2" for="user_ids">
-                        Asignar Usuarios
-                    </label>
-                    <user-select
-                        :users="{{ json_encode($usuarios) }}"
-                        :initial-selected="{{ json_encode($ticket->users->pluck('id')) }}"
-                        @update:selected="updateSelectedUsers">
-                    </user-select>
+                    <x-user-select :users="$usuarios" :selected-users="$ticket->users->pluck('id')->toArray()" />
                 </div>
             @endcan
             <div class="mb-4">

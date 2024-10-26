@@ -1,48 +1,5 @@
-<!-- resources/js/components/UserSelect.vue -->
-<template>
-    <div>
-        <label class="block text-gray-700 text-sm font-bold mb-2" for="user_ids">
-            Asignar Usuarios
-        </label>
-        <select
-            v-model="selectedUsers"
-            multiple
-            class="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-        >
-            <option v-for="user in users" :key="user.id" :value="user.id">
-                {{ user.name }}
-            </option>
-        </select>
-    </div>
-</template>
+@extends('layouts.app')
 
-<script>
-export default {
-    props: {
-        users: {
-            type: Array,
-            required: true
-        },
-        initialSelected: {
-            type: Array,
-            default: () => []
-        }
-    },
-    data() {
-        return {
-            selectedUsers: this.initialSelected
-        };
-    },
-    watch: {
-        selectedUsers(newVal) {
-            this.$emit('update:selected', newVal);
-        }
-    }
-};
-</script>
-
-<style scoped>
-/* Puedes agregar estilos personalizados aquí */
 @section('content')
     <div class="container mx-auto px-4 py-8">
         <div class="flex justify-between items-center mb-6">
@@ -147,14 +104,30 @@ export default {
                 <table class="min-w-full leading-normal">
                     <thead>
                         <tr>
-                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Título</th>
-                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Departamento</th>
-                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Estado</th>
-                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Fecha de Creación</th>
-                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Fecha de Entrega</th>
-                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Creado por</th>
-                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Usuarios Asignados</th>
-                            <th class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Acciones</th>
+                            <th
+                                class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                Título</th>
+                            <th
+                                class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                Departamento</th>
+                            <th
+                                class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                Estado</th>
+                            <th
+                                class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                Fecha de Creación</th>
+                            <th
+                                class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                Fecha de Entrega</th>
+                            <th
+                                class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                Creado por</th>
+                            <th
+                                class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                Usuarios Asignados</th>
+                            <th
+                                class="px-5 py-3 border-b-2 border-gray-200 bg-gray-100 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -198,7 +171,9 @@ export default {
                                 <td class="px-5 py-5 border-b border-gray-200 bg-white text-sm">
                                     <p class="text-gray-900 whitespace-no-wrap">
                                         @foreach ($ticket->users as $user)
-                                            {{ $user->name }}@if (!$loop->last), @endif
+                                            {{ $user->name }}@if (!$loop->last)
+                                                ,
+                                            @endif
                                         @endforeach
                                     </p>
                                 </td>

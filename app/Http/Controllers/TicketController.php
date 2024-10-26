@@ -16,30 +16,45 @@ class TicketController extends Controller
 {
     public function index(Request $request)
     {
+        // Inicializar la consulta usando Eloquent
         $query = Ticket::with(['departamento', 'estado', 'users']); // Cargar relaciones anticipadamente
 
-        // Filtrar por fecha si se proporciona
+        // Filtrar por título
+        if ($request->filled('titulo')) {
+            $query->where('titulo', 'like', '%' . $request->input('titulo') . '%');
+        }
+
+        // Filtrar por departamento
+        if ($request->filled('departamento_id')) {
+            $query->where('departamento_id', $request->input('departamento_id'));
+        }
+
+        // Filtrar por estado
+        if ($request->filled('estado_id')) {
+            $query->where('estado_id', $request->input('estado_id'));
+        }
+
+        // Filtrar por fecha de creación si se proporciona
         if ($request->filled('fecha_inicio')) {
-            $fechaInicio = Carbon::parse($request->input('fecha_inicio'));
-            $query->whereDate('fecha_entrega', '>=', $fechaInicio);
+            try {
+                $fechaInicio = Carbon::parse($request->input('fecha_inicio'))->startOfDay(); // Inicia desde el comienzo del día
+                $query->where('created_at', '>=', $fechaInicio);
+            } catch (\Exception $e) {
+                return back()->withErrors(['fecha_inicio' => 'Formato de fecha de inicio no válido.']);
+            }
         }
 
         if ($request->filled('fecha_fin')) {
-            $fechaFin = Carbon::parse($request->input('fecha_fin'));
-            $query->whereDate('fecha_entrega', '<=', $fechaFin);
+            try {
+                $fechaFin = Carbon::parse($request->input('fecha_fin'))->endOfDay(); // Termina al final del día
+                $query->where('created_at', '<=', $fechaFin);
+            } catch (\Exception $e) {
+                return back()->withErrors(['fecha_fin' => 'Formato de fecha de fin no válido.']);
+            }
         }
 
-        // Obtener tickets del día actual si no se filtra
-        if (!$request->filled('fecha_inicio') && !$request->filled('fecha_fin')) {
-            $query->whereDate('fecha_entrega', Carbon::today());
-        }
-
+        // Obtener los tickets paginados
         $tickets = $query->paginate(10);
-
-        // Mensaje si no hay tickets para el día actual
-        if ($tickets->isEmpty() && !$request->filled('fecha_inicio') && !$request->filled('fecha_fin')) {
-            session()->flash('message', 'No hay tickets registrados o creados el día de hoy.');
-        }
 
         // Obtener todos los departamentos y estados
         $departamentos = Departamento::all();

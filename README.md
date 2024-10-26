@@ -48,6 +48,12 @@ Antes de comenzar, asegúrate de tener instalado:
    ```bash
    choco install nssm
    ```
+   win cmd
+   ```bash
+   curl -L -o nssm.zip https://nssm.cc/release/nssm-2.24.zip
+   nssm.exe 
+   --coloca la ruta ejecutable en variables c:/nssm/win64/
+   ```
 
 2. Configura el servicio:
    ```bash
