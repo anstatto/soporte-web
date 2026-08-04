@@ -107,6 +107,16 @@ class ComentarioController extends Controller
             ->unique('id')
             ->reject(fn ($u) => in_array($u->id, $mentionedIds, true) || $u->id === Auth::id());
 
+        $mutedIds = \App\Models\ChatState::query()
+            ->where('chat_type', \App\Models\ChatState::TYPE_TICKET)
+            ->where('chat_id', $ticket->id)
+            ->whereNotNull('muted_at')
+            ->whereIn('user_id', $recipients->pluck('id'))
+            ->pluck('user_id')
+            ->all();
+
+        $recipients = $recipients->reject(fn ($u) => in_array($u->id, $mutedIds, true));
+
         if ($recipients->isNotEmpty()) {
             Notification::send(
                 $recipients,

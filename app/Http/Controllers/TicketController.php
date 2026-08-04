@@ -77,6 +77,35 @@ class TicketController extends Controller
             ->withQueryString();
 
         $lastMessages = $this->latestComentariosFor($tickets->getCollection()->pluck('id')->all());
+
+        // Marcar leído antes de calcular badges del listado
+        $chatId = (int) $request->input('chat');
+        $activeTicketModel = null;
+        if ($chatId > 0) {
+            $candidate = Ticket::find($chatId);
+            if ($candidate && $user->can('view', $candidate)) {
+                $wsOk = ! $user->current_workspace_id
+                    || (int) $candidate->workspace_id === (int) $user->current_workspace_id;
+                if ($wsOk) {
+                    ChatInbox::markTicketRead($user, $candidate->id);
+                    $user->unreadNotifications
+                        ->filter(fn ($n) => (int) ($n->data['ticket_id'] ?? 0) === $candidate->id)
+                        ->each->markAsRead();
+                    $activeTicketModel = $candidate;
+                }
+            }
+        }
+
+        $dmController = app(ConversacionController::class);
+        $canDm = $user->can('chat with users');
+        $dmId = (int) $request->input('dm');
+        if ($canDm && $dmId > 0) {
+            $convPreview = \App\Models\Conversacion::find($dmId);
+            if ($convPreview && $user->can('view', $convPreview)) {
+                ChatInbox::markDmRead($user, $convPreview->id);
+            }
+        }
+
         $ticketMetas = ChatInbox::ticketMetas($user, $tickets->getCollection()->pluck('id')->all());
 
         $tickets->through(function (Ticket $t) use ($user, $lastMessages, $ticketMetas) {
@@ -103,8 +132,7 @@ class TicketController extends Controller
         });
 
         $activeChat = null;
-        $chatId = (int) $request->input('chat');
-        if ($chatId > 0) {
+        if ($activeTicketModel) {
             $ticket = Ticket::with([
                 'user:id,name,username',
                 'departamento:id,nombre',
@@ -113,44 +141,31 @@ class TicketController extends Controller
                 'comentarios.user:id,name,username',
                 'comentarios.adjunto',
                 'adjuntos',
-            ])->find($chatId);
+            ])->find($activeTicketModel->id);
 
-            if ($ticket && $user->can('view', $ticket)) {
-                $wsOk = ! $user->current_workspace_id
-                    || (int) $ticket->workspace_id === (int) $user->current_workspace_id;
-                if ($wsOk) {
-                    ChatInbox::markTicketRead($user, $ticket->id);
-                    $user->unreadNotifications
-                        ->filter(fn ($n) => (int) ($n->data['ticket_id'] ?? 0) === $ticket->id)
-                        ->each->markAsRead();
-
-                    $activeChat = [
-                        'id' => $ticket->id,
-                        'titulo' => $ticket->titulo,
-                        'descripcion' => $ticket->descripcion,
-                        'estado' => $ticket->estado?->only(['id', 'nombre', 'color']),
-                        'departamento' => $ticket->departamento?->only(['id', 'nombre']),
-                        'user' => $ticket->user?->only(['id', 'name', 'username']),
-                        'asignados' => $ticket->users->map->only(['id', 'name', 'username'])->values(),
-                        'participantes' => $this->chatParticipants($ticket),
-                        'comentarios' => $ticket->comentarios->map(fn ($c) => $this->comentarioPayload($c))->values(),
-                        'adjuntos' => $ticket->adjuntos->map->toPayload()->values(),
-                        'canComment' => $user->can('comment', $ticket),
-                        'created_at' => $ticket->created_at?->toIso8601String(),
-                        'meta' => \App\Models\ChatState::for($user, \App\Models\ChatState::TYPE_TICKET, $ticket->id)->toMeta(),
-                    ];
-                }
+            if ($ticket) {
+                $activeChat = [
+                    'id' => $ticket->id,
+                    'titulo' => $ticket->titulo,
+                    'descripcion' => $ticket->descripcion,
+                    'estado' => $ticket->estado?->only(['id', 'nombre', 'color']),
+                    'departamento' => $ticket->departamento?->only(['id', 'nombre']),
+                    'user' => $ticket->user?->only(['id', 'name', 'username']),
+                    'asignados' => $ticket->users->map->only(['id', 'name', 'username'])->values(),
+                    'participantes' => $this->chatParticipants($ticket),
+                    'comentarios' => $ticket->comentarios->map(fn ($c) => $this->comentarioPayload($c))->values(),
+                    'adjuntos' => $ticket->adjuntos->map->toPayload()->values(),
+                    'canComment' => $user->can('comment', $ticket),
+                    'created_at' => $ticket->created_at?->toIso8601String(),
+                    'meta' => \App\Models\ChatState::for($user, \App\Models\ChatState::TYPE_TICKET, $ticket->id)->toMeta(),
+                ];
             }
         }
 
-        $dmController = app(ConversacionController::class);
-        $canDm = $user->can('chat with users');
         $activeDm = null;
-        $dmId = (int) $request->input('dm');
         if ($canDm && $dmId > 0) {
             $conv = \App\Models\Conversacion::with(['users:id,name,username', 'mensajes.user:id,name,username'])->find($dmId);
             if ($conv && $user->can('view', $conv)) {
-                ChatInbox::markDmRead($user, $conv->id);
                 $activeDm = $dmController->payload($conv, $user);
                 $activeDm['meta'] = \App\Models\ChatState::for($user, \App\Models\ChatState::TYPE_DM, $conv->id)->toMeta();
             }
@@ -843,7 +858,7 @@ class TicketController extends Controller
         Cache::put($key, $list, now()->addSeconds(30));
 
         broadcast(new UsuarioEscribiendo(
-            $ticket,
+            'ticket.'.$ticket->id,
             Auth::id(),
             Auth::user()->name
         ))->toOthers();

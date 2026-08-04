@@ -62,8 +62,8 @@ const viewerOpen = ref(false);
 const viewerFile = ref(null);
 
 let pollTimer = null;
-let typingTimer = null;
-let dmTypingTimer = null;
+let typingTimers = {};
+let dmTypingTimers = {};
 let lastTypingSent = 0;
 let lastDmTypingSent = 0;
 let echoChannel = null;
@@ -201,9 +201,23 @@ const dmStartUsers = computed(() => {
 const dmTypingLabel = computed(() => {
     const names = dmTypingUsers.value.map((u) => u.name).filter(Boolean);
     if (!names.length) return '';
-    if (names.length === 1) return `${names[0]} está escribiendo…`;
-    if (names.length === 2) return `${names[0]} y ${names[1]} están escribiendo…`;
-    return 'Varias personas están escribiendo…';
+    // DM 1:1 → estilo WhatsApp
+    return 'escribiendo';
+});
+
+const typingLabel = computed(() => {
+    const names = typingUsers.value.map((u) => u.name).filter(Boolean);
+    if (!names.length) return '';
+    if (names.length === 1) return `${names[0]} está escribiendo`;
+    if (names.length === 2) return `${names[0]} y ${names[1]} están escribiendo`;
+    return 'Varias personas están escribiendo';
+});
+
+const typingHeaderSubtitle = computed(() => {
+    if (isPersonasTab.value) {
+        return dmTypingLabel.value ? 'escribiendo' : null;
+    }
+    return typingLabel.value || null;
 });
 
 watch(form, applyFilters, { deep: true });
@@ -255,6 +269,20 @@ watch(isPersonasTab, (personas) => {
     }
 });
 
+watch(
+    () => typingUsers.value.length,
+    (n, prev) => {
+        if (n > (prev || 0)) scrollBottom({ force: true });
+    },
+);
+
+watch(
+    () => dmTypingUsers.value.length,
+    (n, prev) => {
+        if (n > (prev || 0)) scrollDmBottom({ force: true });
+    },
+);
+
 const avatar = (name) =>
     `https://ui-avatars.com/api/?name=${encodeURIComponent(name || '?')}&background=579DFF&color=fff`;
 
@@ -299,14 +327,6 @@ const dmPreviewText = (c) => {
     }
     return 'Sin mensajes';
 };
-
-const typingLabel = computed(() => {
-    const names = typingUsers.value.map((u) => u.name).filter(Boolean);
-    if (!names.length) return '';
-    if (names.length === 1) return `${names[0]} está escribiendo…`;
-    if (names.length === 2) return `${names[0]} y ${names[1]} están escribiendo…`;
-    return 'Varias personas están escribiendo…';
-});
 
 const mentionCandidates = computed(() => {
     const q = mentionQuery.value.toLowerCase();
@@ -383,14 +403,34 @@ const appendComment = async (raw, { forceScroll = false } = {}) => {
 
 const clearTypingUser = (userId) => {
     typingUsers.value = typingUsers.value.filter((u) => u.id !== userId);
+    if (typingTimers[userId]) {
+        clearTimeout(typingTimers[userId]);
+        delete typingTimers[userId];
+    }
 };
 
 const setTypingUser = (user) => {
     if (!user?.id || Number(user.id) === meId.value) return;
     const rest = typingUsers.value.filter((u) => u.id !== user.id);
-    typingUsers.value = [...rest, user];
-    if (typingTimer) clearTimeout(typingTimer);
-    typingTimer = setTimeout(() => clearTypingUser(user.id), 4000);
+    typingUsers.value = [...rest, { id: user.id, name: user.name }];
+    if (typingTimers[user.id]) clearTimeout(typingTimers[user.id]);
+    typingTimers[user.id] = setTimeout(() => clearTypingUser(user.id), 4500);
+};
+
+const clearDmTypingUser = (userId) => {
+    dmTypingUsers.value = dmTypingUsers.value.filter((u) => u.id !== userId);
+    if (dmTypingTimers[userId]) {
+        clearTimeout(dmTypingTimers[userId]);
+        delete dmTypingTimers[userId];
+    }
+};
+
+const setDmTypingUser = (user) => {
+    if (!user?.id || Number(user.id) === meId.value) return;
+    const rest = dmTypingUsers.value.filter((u) => u.id !== user.id);
+    dmTypingUsers.value = [...rest, { id: user.id, name: user.name }];
+    if (dmTypingTimers[user.id]) clearTimeout(dmTypingTimers[user.id]);
+    dmTypingTimers[user.id] = setTimeout(() => clearDmTypingUser(user.id), 4500);
 };
 
 const subscribeRealtime = (ticketId) => {
@@ -436,18 +476,6 @@ const appendDmMessage = async (raw, { forceScroll = false } = {}) => {
     await scrollDmBottom({ force: forceScroll });
 };
 
-const clearDmTypingUser = (userId) => {
-    dmTypingUsers.value = dmTypingUsers.value.filter((u) => u.id !== userId);
-};
-
-const setDmTypingUser = (user) => {
-    if (!user?.id || Number(user.id) === meId.value) return;
-    const rest = dmTypingUsers.value.filter((u) => u.id !== user.id);
-    dmTypingUsers.value = [...rest, user];
-    if (dmTypingTimer) clearTimeout(dmTypingTimer);
-    dmTypingTimer = setTimeout(() => clearDmTypingUser(user.id), 4000);
-};
-
 const subscribeDmRealtime = (dmId) => {
     unsubscribeDmRealtime();
     if (!window.Echo || !dmId) {
@@ -456,10 +484,14 @@ const subscribeDmRealtime = (dmId) => {
     }
     try {
         echoDmChannel = window.Echo.private(`conversacion.${dmId}`);
-        echoDmChannel.listen('.mensaje.creado', async (payload) => {
-            await appendDmMessage(payload.mensaje, { forceScroll: true });
-            clearDmTypingUser(payload.mensaje?.user_id ?? payload.mensaje?.user?.id);
-        });
+        echoDmChannel
+            .listen('.mensaje.creado', async (payload) => {
+                await appendDmMessage(payload.mensaje, { forceScroll: true });
+                clearDmTypingUser(payload.mensaje?.user_id ?? payload.mensaje?.user?.id);
+            })
+            .listen('.usuario.escribiendo', (payload) => {
+                setDmTypingUser(payload.user);
+            });
         subscribedDmId = dmId;
         dmRealtimeActive.value = true;
     } catch {
@@ -830,8 +862,10 @@ onMounted(() => {
 
 onUnmounted(() => {
     if (pollTimer) clearInterval(pollTimer);
-    if (typingTimer) clearTimeout(typingTimer);
-    if (dmTypingTimer) clearTimeout(dmTypingTimer);
+    Object.values(typingTimers).forEach(clearTimeout);
+    Object.values(dmTypingTimers).forEach(clearTimeout);
+    typingTimers = {};
+    dmTypingTimers = {};
     unsubscribeRealtime();
     unsubscribeDmRealtime();
     clearImage();
@@ -1232,7 +1266,14 @@ onUnmounted(() => {
                         </div>
                         <div class="min-w-0">
                             <p class="truncate text-sm font-semibold text-white">{{ chat.titulo }}</p>
-                            <p class="truncate text-[11px] text-[#8B9AAB]">
+                            <p
+                                v-if="typingHeaderSubtitle"
+                                class="truncate text-[11px] font-medium text-[#25D366]"
+                            >
+                                {{ typingHeaderSubtitle }}
+                                <span class="typing-dots" aria-hidden="true"><i /><i /><i /></span>
+                            </p>
+                            <p v-else class="truncate text-[11px] text-[#8B9AAB]">
                                 {{
                                     (chat.participantes || [])
                                         .map((p) => p.name)
@@ -1242,6 +1283,32 @@ onUnmounted(() => {
                             </p>
                         </div>
                     </div>
+
+                    <el-dropdown
+                        trigger="click"
+                        @command="(cmd) => onRowMenu('ticket', { id: chat.id, unread: 0, meta: chat.meta || {} }, cmd)"
+                    >
+                        <el-button size="small" circle>
+                            <el-icon><MoreFilled /></el-icon>
+                        </el-button>
+                        <template #dropdown>
+                            <el-dropdown-menu>
+                                <el-dropdown-item command="unread">Marcar como no leído</el-dropdown-item>
+                                <el-dropdown-item command="star">
+                                    {{ chat.meta?.starred ? 'Quitar de más tarde' : 'Leer más tarde' }}
+                                </el-dropdown-item>
+                                <el-dropdown-item command="pin">
+                                    {{ chat.meta?.pinned ? 'Desfijar' : 'Fijar chat' }}
+                                </el-dropdown-item>
+                                <el-dropdown-item command="mute">
+                                    {{ chat.meta?.muted ? 'Activar notificaciones' : 'Silenciar' }}
+                                </el-dropdown-item>
+                                <el-dropdown-item divided command="archive">
+                                    {{ chat.meta?.archived ? 'Desarchivar' : 'Archivar' }}
+                                </el-dropdown-item>
+                            </el-dropdown-menu>
+                        </template>
+                    </el-dropdown>
 
                     <el-button
                         v-if="isSoporte"
@@ -1344,15 +1411,23 @@ onUnmounted(() => {
                         </div>
                     </div>
 
-                    <p v-if="!chat.comentarios?.length" class="py-16 text-center text-sm text-[#8B9AAB]">
+                    <p v-if="!chat.comentarios?.length && !typingUsers.length" class="py-16 text-center text-sm text-[#8B9AAB]">
                         Sin mensajes. Escribe el primero…
                     </p>
+
+                    <div
+                        v-for="u in typingUsers"
+                        :key="'typing-' + u.id"
+                        class="flex gap-2"
+                    >
+                        <img :src="avatar(u.name)" class="mt-1 h-8 w-8 shrink-0 rounded-full" alt="" />
+                        <div class="typing-bubble">
+                            <span class="typing-dots typing-dots--lg" aria-hidden="true"><i /><i /><i /></span>
+                        </div>
+                    </div>
                 </div>
 
-                <p v-if="typingLabel" class="h-5 shrink-0 px-4 text-xs italic text-[#85B8FF]">
-                    {{ typingLabel }}
-                </p>
-                <p v-else class="h-2 shrink-0" />
+                <div class="h-2 shrink-0" />
 
                 <div
                     v-if="chat.canComment"
@@ -1456,11 +1531,44 @@ onUnmounted(() => {
                             <p class="truncate text-sm font-semibold text-white">
                                 {{ dmChat.peer?.name || 'Chat directo' }}
                             </p>
-                            <p class="truncate text-[11px] text-[#8B9AAB]">
+                            <p
+                                v-if="typingHeaderSubtitle"
+                                class="truncate text-[11px] font-medium text-[#25D366]"
+                            >
+                                escribiendo
+                                <span class="typing-dots" aria-hidden="true"><i /><i /><i /></span>
+                            </p>
+                            <p v-else class="truncate text-[11px] text-[#8B9AAB]">
                                 @{{ dmChat.peer?.username || 'usuario' }}
                             </p>
                         </div>
                     </div>
+
+                    <el-dropdown
+                        trigger="click"
+                        @command="(cmd) => onRowMenu('dm', { id: dmChat.id, unread: 0, meta: dmChat.meta || {} }, cmd)"
+                    >
+                        <el-button size="small" circle>
+                            <el-icon><MoreFilled /></el-icon>
+                        </el-button>
+                        <template #dropdown>
+                            <el-dropdown-menu>
+                                <el-dropdown-item command="unread">Marcar como no leído</el-dropdown-item>
+                                <el-dropdown-item command="star">
+                                    {{ dmChat.meta?.starred ? 'Quitar de más tarde' : 'Leer más tarde' }}
+                                </el-dropdown-item>
+                                <el-dropdown-item command="pin">
+                                    {{ dmChat.meta?.pinned ? 'Desfijar' : 'Fijar chat' }}
+                                </el-dropdown-item>
+                                <el-dropdown-item command="mute">
+                                    {{ dmChat.meta?.muted ? 'Activar notificaciones' : 'Silenciar' }}
+                                </el-dropdown-item>
+                                <el-dropdown-item divided command="archive">
+                                    {{ dmChat.meta?.archived ? 'Desarchivar' : 'Archivar' }}
+                                </el-dropdown-item>
+                            </el-dropdown-menu>
+                        </template>
+                    </el-dropdown>
                 </header>
 
                 <div
@@ -1526,15 +1634,23 @@ onUnmounted(() => {
                         </div>
                     </div>
 
-                    <p v-if="!dmChat.mensajes?.length" class="py-16 text-center text-sm text-[#8B9AAB]">
+                    <p v-if="!dmChat.mensajes?.length && !dmTypingUsers.length" class="py-16 text-center text-sm text-[#8B9AAB]">
                         Sin mensajes. Escribe el primero…
                     </p>
+
+                    <div
+                        v-for="u in dmTypingUsers"
+                        :key="'dm-typing-' + u.id"
+                        class="flex gap-2"
+                    >
+                        <img :src="avatar(u.name)" class="mt-1 h-8 w-8 shrink-0 rounded-full" alt="" />
+                        <div class="typing-bubble">
+                            <span class="typing-dots typing-dots--lg" aria-hidden="true"><i /><i /><i /></span>
+                        </div>
+                    </div>
                 </div>
 
-                <p v-if="dmTypingLabel" class="h-5 shrink-0 px-4 text-xs italic text-[#85B8FF]">
-                    {{ dmTypingLabel }}
-                </p>
-                <p v-else class="h-2 shrink-0" />
+                <div class="h-2 shrink-0" />
 
                 <div
                     v-if="dmChat.canMessage"

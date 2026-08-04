@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Events\MensajeDmCreado;
+use App\Events\UsuarioEscribiendo;
 use App\Models\Conversacion;
 use App\Models\Mensaje;
 use App\Models\TicketAdjunto;
@@ -135,7 +136,15 @@ class ConversacionController extends Controller
             'name' => Auth::user()->name,
             'at' => time(),
         ];
+        $cutoff = time() - 8;
+        $list = array_filter($list, fn ($row) => ($row['at'] ?? 0) >= $cutoff);
         Cache::put($key, $list, now()->addSeconds(30));
+
+        broadcast(new UsuarioEscribiendo(
+            'conversacion.'.$conversacion->id,
+            $uid,
+            Auth::user()->name
+        ))->toOthers();
 
         return response()->json(['ok' => true]);
     }
