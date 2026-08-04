@@ -4,74 +4,59 @@ namespace App\Http\Controllers;
 
 use App\Models\Estado;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class EstadoController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Estado::query();
+        abort_unless(auth()->user()->can('view estado'), 403);
 
-        if ($request->has('search')) {
-            $query->whereRaw('LOWER(nombre) LIKE ?', ['%' . strtolower($request->search) . '%']);
-        }
+        $estados = Estado::query()
+            ->when($request->filled('search'), function ($q) use ($request) {
+                $q->whereRaw('LOWER(nombre) LIKE ?', ['%'.strtolower($request->search).'%']);
+            })
+            ->orderBy('nombre')
+            ->paginate(10)
+            ->withQueryString();
 
-        $estados = $query->paginate(10);
-
-        return view('estados.index_estado', compact('estados'));
-    }
-
-    public function create()
-    {
-        return view('estados.create_estado');
+        return Inertia::render('Estados/Index', [
+            'estados' => $estados,
+            'filters' => $request->only('search'),
+        ]);
     }
 
     public function store(Request $request)
     {
+        abort_unless(auth()->user()->can('create estado'), 403);
+
         $request->validate([
             'nombre' => 'required|string|max:255|unique:estados',
-            'color' => 'required|string|max:7', // Asegúrate de que el color sea validado correctamente
+            'color' => 'required|string|max:7',
         ]);
+        Estado::create($request->only('nombre', 'color'));
 
-        Estado::create($request->all());
-        return redirect()->route('estados.index')->with('success', 'Estado creado exitosamente.');
-    }
-
-    public function show(Estado $estado)
-    {
-        $contrastColor = $this->getContrastColor($estado->color);
-        return view('estados.show_estado', compact('estado', 'contrastColor'));
-    }
-
-    public function edit(Estado $estado)
-    {
-        return view('estados.edit_estado', compact('estado'));
+        return redirect()->route('estados.index')->with('success', 'Estado creado.');
     }
 
     public function update(Request $request, Estado $estado)
     {
-        $request->validate([
-            'nombre' => 'required|string|max:255|unique:estados,nombre,' . $estado->id,
-            'color' => 'required|string|max:7', // Asegúrate de que el color sea validado correctamente
-        ]);
+        abort_unless(auth()->user()->can('edit estado'), 403);
 
-        $estado->update($request->all());
-        return redirect()->route('estados.index')->with('success', 'Estado actualizado exitosamente.');
+        $request->validate([
+            'nombre' => 'required|string|max:255|unique:estados,nombre,'.$estado->id,
+            'color' => 'required|string|max:7',
+        ]);
+        $estado->update($request->only('nombre', 'color'));
+
+        return redirect()->route('estados.index')->with('success', 'Estado actualizado.');
     }
 
     public function destroy(Estado $estado)
     {
+        abort_unless(auth()->user()->can('delete estado'), 403);
         $estado->delete();
-        return redirect()->route('estados.index')->with('success', 'Estado eliminado exitosamente.');
-    }
 
-    private function getContrastColor($hexcolor)
-    {
-        $r = hexdec(substr($hexcolor, 1, 2));
-        $g = hexdec(substr($hexcolor, 3, 2));
-        $b = hexdec(substr($hexcolor, 5, 2));
-
-        $yiq = (($r * 299) + ($g * 587) + ($b * 114)) / 1000;
-
-        return ($yiq >= 128) ? '#000000' : '#FFFFFF';
+        return redirect()->route('estados.index')->with('success', 'Estado eliminado.');
     }
 }

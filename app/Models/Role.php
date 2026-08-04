@@ -2,17 +2,17 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+use Spatie\Permission\Models\Role as SpatieRole;
 
-class Role extends Model
+class Role extends SpatieRole
 {
-    use HasFactory;
+    protected $fillable = [
+        'name',
+        'guard_name',
+        'is_agent',
+    ];
 
-    protected $fillable = ['name']; // Asegúrate de que 'name' sea un atributo en tu tabla de roles
-
-    public function users()
-    {
-        return $this->belongsToMany(User::class);
-    }
+    protected $casts = [
+        'is_agent' => 'boolean',
+    ];
 }

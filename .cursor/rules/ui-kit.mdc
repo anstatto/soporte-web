@@ -1,0 +1,41 @@
+---
+description: Kit UI del workspace — qué es custom Trello vs Element Plus
+alwaysApply: true
+---
+
+# UI kit (soporte-web)
+
+Una sola regla: **no Frankenstein**. Cada superficie usa una herramienta.
+
+## Custom Tailwind (estilo Trello)
+
+Usar HTML + Tailwind **solo** para:
+
+- Tablero Kanban (columnas, tarjetas, drag)
+- Chips de etiquetas / prioridad en cards
+- Nav flotante inferior
+- Burbujas del chat (hilo de mensajes)
+- Empty states del board
+
+No uses `el-card` / `el-table` para el board.
+
+## Element Plus (formularios y chrome)
+
+Usar **siempre** Element Plus para:
+
+- Inputs, selects, date-picker, textarea de formularios
+- Botones de acción en admin / modal (salvo “añadir tarjeta” del board)
+- Tablas admin (`el-table`)
+- Diálogos / confirmaciones (`ElMessageBox`)
+- Dropdowns, badge, avatar, paginación
+- Topbar (buscar, crear, notificaciones)
+
+## Iconos
+
+**Solo `@element-plus/icons-vue`** (ya registrados globalmente).  
+No añadir Lucide en pantallas nuevas; al tocar un archivo, quitar Lucide.
+
+## Tema
+
+Todo vive en el shell oscuro (`AppLayout` `#1D2125`).  
+No reintroducir formularios blancos (`bg-white` en inputs). Preferir `el-*` o clases `.input-field` ya adaptadas a dark.

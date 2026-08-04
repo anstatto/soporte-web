@@ -4,61 +4,60 @@ namespace App\Http\Controllers;
 
 use App\Models\Departamento;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class DepartamentoController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Departamento::query();
+        $this->authorizePermission('view departamento');
 
-        if ($request->has('search')) {
-            $query->whereRaw('LOWER(nombre) LIKE ?', ['%' . strtolower($request->search) . '%']);
-        }
+        $departamentos = Departamento::query()
+            ->when($request->filled('search'), function ($q) use ($request) {
+                $q->whereRaw('LOWER(nombre) LIKE ?', ['%'.strtolower($request->search).'%']);
+            })
+            ->orderBy('nombre')
+            ->paginate(10)
+            ->withQueryString();
 
-        $departamentos = $query->paginate(10);
-
-        return view('departamentos.index_departamento', compact('departamentos'));
-    }
-
-    public function create()
-    {
-        return view('departamentos.create_departamento');
+        return Inertia::render('Departamentos/Index', [
+            'departamentos' => $departamentos,
+            'filters' => $request->only('search'),
+        ]);
     }
 
     public function store(Request $request)
     {
-        $request->validate([
-            'nombre' => 'required|string|max:255|unique:departamentos',
-        ]);
+        $this->authorizePermission('create departamento');
 
-        Departamento::create($request->all());
-        return redirect()->route('departamentos.index')->with('success', 'Departamento creado exitosamente.');
-    }
+        $request->validate(['nombre' => 'required|string|max:255|unique:departamentos']);
+        Departamento::create($request->only('nombre'));
 
-    public function show(Departamento $departamento)
-    {
-        $ticketsAbiertos = $departamento->getTicketsAbiertos();
-        return view('departamentos.show_departamento', compact('departamento', 'ticketsAbiertos'));
-    }
-
-    public function edit(Departamento $departamento)
-    {
-        return view('departamentos.edit_departamento', compact('departamento'));
+        return redirect()->route('departamentos.index')->with('success', 'Departamento creado.');
     }
 
     public function update(Request $request, Departamento $departamento)
     {
-        $request->validate([
-            'nombre' => 'required|string|max:255|unique:departamentos,nombre,' . $departamento->id,
-        ]);
+        $this->authorizePermission('edit departamento');
 
-        $departamento->update($request->all());
-        return redirect()->route('departamentos.index');
+        $request->validate([
+            'nombre' => 'required|string|max:255|unique:departamentos,nombre,'.$departamento->id,
+        ]);
+        $departamento->update($request->only('nombre'));
+
+        return redirect()->route('departamentos.index')->with('success', 'Departamento actualizado.');
     }
 
     public function destroy(Departamento $departamento)
     {
+        $this->authorizePermission('delete departamento');
         $departamento->delete();
-        return redirect()->route('departamentos.index')->with('success', 'Departamento eliminado exitosamente.');
+
+        return redirect()->route('departamentos.index')->with('success', 'Departamento eliminado.');
+    }
+
+    protected function authorizePermission(string $permission): void
+    {
+        abort_unless(auth()->user()->can($permission), 403);
     }
 }

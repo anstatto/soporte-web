@@ -1,23 +1,34 @@
-import vue from '@vitejs/plugin-vue';
-import laravel from 'laravel-vite-plugin';
 import { defineConfig } from 'vite';
+import laravel from 'laravel-vite-plugin';
+import vue from '@vitejs/plugin-vue';
+import path from 'path';
 
 export default defineConfig({
     plugins: [
-        vue(),
         laravel({
-            input: ['resources/js/app.js', 'resources/css/app.css'],
-            refresh: true,
+            input: ['resources/css/app.css', 'resources/js/app.js'],
+            // Evita full-reload por cada cambio en routes/PHP (Inertia no lo necesita).
+            // Solo refresca si cambian vistas Blade.
+            refresh: ['resources/views/**'],
+        }),
+        vue({
+            template: {
+                transformAssetUrls: {
+                    base: null,
+                    includeAbsolute: false,
+                },
+            },
         }),
     ],
     resolve: {
         alias: {
-            vue: 'vue/dist/vue.esm-bundler.js',
-
+            '@': path.resolve('resources/js'),
         },
     },
-    define: {
-        __VUE_OPTIONS_API__: true,
-        __VUE_PROD_DEVTOOLS__: false,
+    server: {
+        watch: {
+            // Menos ruido en Windows con editor + agent guardando archivos
+            ignored: ['**/storage/**', '**/vendor/**', '**/.git/**'],
+        },
     },
 });

@@ -1,87 +1,52 @@
-# Instrucciones para Configurar y Ejecutar el Proyecto Laravel
+# RM Consuegra — Soporte interno (Inertia + Vue 3)
 
-## Requisitos previos
+Sistema de **mensajería interna / tickets** para RM Consuegra SRL.
 
-Antes de comenzar, asegúrate de tener instalado:
+## Stack
 
-1. **PHP**: Descárgalo de [php.net](https://www.php.net/downloads.php).
-2. **Composer**: Instálalo desde [getcomposer.org](https://getcomposer.org/download/).
-3. **Node.js y NPM**: Descarga Node.js de [nodejs.org](https://nodejs.org/).
+- Laravel 11 + Inertia.js + Vue 3 + Tailwind
+- Spatie Permission (`admin`, `soporte`, `solicitante`)
+- PostgreSQL
 
-## Configuración del proyecto
+## Roles
 
-1. Clona el repositorio:
-   ```bash
-   git clone https://github.com/tu-usuario/tu-repo.git
-   cd tu-repo
-   ```
+| Rol | Uso |
+|-----|-----|
+| `admin` | Todo + crear usuarios + catálogos |
+| `soporte` | Inbox global, Kanban, responder hilos |
+| `solicitante` | Abrir solicitudes y conversar solo en las propias |
 
-2. Instala dependencias PHP:
-   ```bash
-   composer install
-   ```
+El registro público está deshabilitado. **Admin crea usuarios** desde `/users/create`.
 
-3. Configura el archivo .env:
-   ```bash
-   cp .env.example .env
-   ```
-   Edita .env con los datos de tu base de datos.
+## Setup
 
-4. Genera la clave de la aplicación:
-   ```bash
-   php artisan key:generate
-   ```
+```bash
+composer install --ignore-platform-reqs
+cp .env.example .env
+php artisan key:generate
+php artisan migrate
+php artisan db:seed
+# Crea roles, catálogos y super admin (ver SUPER_ADMIN_* en .env)
+npm install
+npm run build
+# desarrollo:
+composer run dev
+# o:
+php artisan serve
+npm run dev
+```
 
-5. Ejecuta las migraciones:
-   ```bash
-   php artisan migrate
-   ```
+Tras cambios de frontend en producción (NSSM): **siempre** `npm run build`.
 
-6. Compila los assets (si es necesario):
-   ```bash
-   npm run build
-   ```
+## Paleta corporativa
 
-## Despliegue con NSSM
+Navy `#0B1F3A`, primary `#1E4E79`, accent `#2F6FAD`, surface `#F3F6F9`.
 
-1. Instala NSSM:
-   ```bash
-   choco install nssm
-   ```
-   win cmd
-   ```bash
-   curl -L -o nssm.zip https://nssm.cc/release/nssm-2.24.zip
-   nssm.exe 
-   --coloca la ruta ejecutable en variables c:/nssm/win64/
-   ```
+## Notas NSSM
 
-2. Configura el servicio:
-   ```bash
-   nssm install LaravelServer "C:\PHP\php.exe" "C:\ruta-proyecto\artisan" "serve" "--host=0.0.0.0" "--port=0000"
-   ```
+```bash
+nssm install LaravelServer "C:\PHP\php.exe" "C:\ruta-proyecto\artisan" "serve" "--host=0.0.0.0" "--port=0000"
+nssm start LaravelServer
+```
 
-3. Inicia el servicio:
-   ```bash
-   nssm start LaravelServer
-   ```
-
-Accede a la aplicación en: http://0.0.0.0:0000
-
-## Notas adicionales
-
-- Revisa logs en `storage/logs/laravel.log`
-- Para detener: `nssm stop LaravelServer`
-- Para eliminar: `nssm remove LaravelServer confirm`
-- Para reiniciar: `nssm restart LaravelServer`
-- Para ver el estado: `nssm status LaravelServer`
-- Para editar la configuración: `nssm edit LaravelServer`
-- Para ver los parámetros: `nssm get LaravelServer`
-
-## Créditos
-
-- [Laravel](https://laravel.com)
-- [NSSM](https://nssm.cc/)
-- [PHP](https://www.php.net/)
-- [Composer](https://getcomposer.org/)
-- [Node.js](https://nodejs.org/)
-- [Chocolatey](https://chocolatey.org/)
+Logs: `storage/logs/laravel.log`

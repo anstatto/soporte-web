@@ -3,25 +3,34 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
-        "dev": "vite"
+        "dev": "vite",
+        "reverb": "php artisan reverb:start",
+        "dev:all": "concurrently -c \"#93c5fd,#c4b5fd,#fdba74\" \"php artisan serve --host=127.0.0.1\" \"npm run dev\" \"php artisan reverb:start\" --names=server,vite,reverb"
     },
     "devDependencies": {
-        "@popperjs/core": "^2.11.6",
         "autoprefixer": "^10.4.20",
         "axios": "^1.7.7",
-        "bootstrap": "^5.2.3",
         "concurrently": "^9.0.1",
+        "laravel-echo": "^2.4.0",
         "laravel-vite-plugin": "^1.0",
         "postcss": "^8.4.47",
-        "sass": "^1.56.1",
+        "pusher-js": "^8.6.0",
         "tailwindcss": "^3.4.13",
         "vite": "^5.0"
     },
     "dependencies": {
+        "@element-plus/icons-vue": "^2.3.2",
+        "@inertiajs/vue3": "^3.6.1",
+        "@lucide/vue": "^1.28.0",
         "@vitejs/plugin-vue": "^5.1.4",
-        "moment": "^2.30.1",
-        "select2": "^4.1.0-rc.0",
-        "sweetalert2": "^11.6.13",
-        "vue": "^3.5.12"
+        "@vueuse/core": "^14.4.0",
+        "chart.js": "^4.5.1",
+        "dayjs": "^1.11.21",
+        "element-plus": "^2.14.3",
+        "mammoth": "^1.12.0",
+        "vue": "^3.5.12",
+        "vue-chartjs": "^5.3.4",
+        "vue-draggable-plus": "^0.6.1",
+        "vue-sonner": "^2.0.9"
     }
 }

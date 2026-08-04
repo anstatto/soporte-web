@@ -1,27 +1,22 @@
-import 'bootstrap';
+import axios from 'axios';
+import { getXsrfToken, syncCsrfMeta } from './csrf';
+
+window.axios = axios;
+window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
+window.axios.defaults.withCredentials = true;
+window.axios.defaults.withXSRFToken = true;
+window.axios.defaults.xsrfCookieName = 'XSRF-TOKEN';
+window.axios.defaults.xsrfHeaderName = 'X-XSRF-TOKEN';
+
+export { getXsrfToken, syncCsrfMeta };
+
+/** Alias: actualiza el meta con el token plano de sesión (props.csrf_token). */
+export const syncCsrfToken = syncCsrfMeta;
 
 /**
- * We'll load the axios HTTP library which allows us to easily issue requests
- * to our Laravel back-end. This library automatically handles sending the
- * CSRF token as a header based on the value of the "XSRF" token cookie.
+ * Token plano del meta (sincronizado tras cada visita Inertia).
+ * No devolver la cookie aquí: la cookie es cifrada y solo vale como X-XSRF-TOKEN.
  */
-
-import axios from 'axios';
-window.axios = axios;
-
-window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
-
-// Eliminar la configuración de Echo y Pusher
-// import Echo from 'laravel-echo';
-// import Pusher from 'pusher-js';
-
-// window.Pusher = Pusher;
-
-// window.Echo = new Echo({
-//     broadcaster: 'pusher',
-//     key: process.env.MIX_PUSHER_APP_KEY,
-//     wsHost: window.location.hostname,
-//     wsPort: 6001,
-//     forceTLS: false,
-//     disableStats: true,
-// });
+export function getCsrfToken() {
+    return document.head.querySelector('meta[name="csrf-token"]')?.content || '';
+}

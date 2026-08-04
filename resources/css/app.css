@@ -1,3 +1,230 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+    /* Shell / board (Tailwind custom) */
+    --brand-navy: #15191e;
+    --brand-primary: #579dff;
+    --brand-accent: #85b8ff;
+    --brand-surface: #15191e;
+    --brand-column: #1d2329;
+    --brand-card: #252c34;
+    --brand-border: #343c45;
+    --brand-muted: #8b9aab;
+    --brand-text: #e8eef4;
+    --state-success: #3d7a5f;
+    --state-warning: #b7791f;
+    --state-danger: #c4554d;
+    --chat-mine: #252c34;
+    --chat-other: #1d2329;
+}
+
+/*
+ * Tema Element Plus: se activa con html.dark + dark/css-vars.css.
+ * Solo tocamos variables — sin !important sobre .el-input / .el-select.
+ */
+html.dark {
+    color-scheme: dark;
+    --el-color-primary: #579dff;
+    --el-color-primary-light-3: #85b8ff;
+    --el-color-primary-light-5: #6ba3e8;
+    --el-color-primary-light-7: #3d6fa8;
+    --el-color-primary-light-8: #2a4f78;
+    --el-color-primary-light-9: #1a334f;
+    --el-color-primary-dark-2: #3d7fd4;
+
+    --el-bg-color-page: #0f1419;
+    --el-bg-color: #1a222c;
+    --el-bg-color-overlay: #252c34;
+
+    --el-text-color-primary: #e8eef4;
+    --el-text-color-regular: #c5d0dc;
+    --el-text-color-secondary: #8b9aab;
+    --el-text-color-placeholder: #6b7a8a;
+    --el-text-color-disabled: #5a6a7a;
+
+    --el-border-color: #2a3340;
+    --el-border-color-light: #2a3340;
+    --el-border-color-lighter: #343c45;
+    --el-border-color-extra-light: #1d2329;
+    --el-border-color-dark: #3d4a58;
+    --el-border-color-darker: #4a5868;
+
+    --el-fill-color: #252c34;
+    --el-fill-color-light: #1d2329;
+    --el-fill-color-lighter: #15191e;
+    --el-fill-color-extra-light: #12171d;
+    --el-fill-color-blank: #1a222c;
+    --el-fill-color-dark: #2a3340;
+
+    --el-mask-color: rgba(0, 0, 0, 0.7);
+
+    --el-table-bg-color: #1a222c;
+    --el-table-tr-bg-color: #1a222c;
+    --el-table-header-bg-color: #12171d;
+    --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.04);
+    --el-table-border-color: #2a3340;
+    --el-table-text-color: #e8eef4;
+    --el-table-header-text-color: #8b9aab;
+    --el-table-current-row-bg-color: rgba(87, 157, 255, 0.08);
+}
+
+@layer base {
+    body {
+        @apply bg-brand-surface font-sans text-white antialiased;
+    }
+
+    h1, h2, h3, h4 {
+        @apply font-display text-white;
+    }
+}
+
+@layer components {
+    .btn-primary {
+        @apply inline-flex items-center justify-center gap-2 rounded-[10px] bg-[#579DFF] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#85B8FF] focus:outline-none focus:ring-2 focus:ring-[#579DFF]/40 disabled:opacity-60;
+    }
+
+    .btn-secondary {
+        @apply inline-flex items-center justify-center gap-2 rounded-[10px] border border-[#343c45] bg-[#1d2329] px-4 py-2 text-sm font-medium text-[#E8EEF4] transition hover:bg-[#252c34] focus:outline-none focus:ring-2 focus:ring-[#579DFF]/30;
+    }
+
+    .btn-danger {
+        @apply inline-flex items-center justify-center gap-2 rounded-[10px] bg-red-500/20 px-4 py-2 text-sm font-medium text-red-300 transition hover:bg-red-500/30 focus:outline-none focus:ring-2 focus:ring-red-500/40;
+    }
+
+    .input-field {
+        @apply w-full rounded-[10px] border border-[#343c45] bg-[#1d2329] px-3 py-2 text-sm text-[#E8EEF4] placeholder:text-[#8B9AAB] focus:border-[#579DFF] focus:outline-none focus:ring-1 focus:ring-[#579DFF];
+    }
+
+    .card-panel {
+        @apply rounded-[10px] border border-[#343c45] bg-[#1d2329] shadow-none;
+    }
+
+    .label-field {
+        @apply mb-1 block text-sm font-medium text-[#8B9AAB];
+    }
+
+    .trello-ghost {
+        @apply opacity-40;
+    }
+
+    .trello-drag {
+        @apply opacity-90;
+    }
+
+    /* Chips corporativos (board — Tailwind, no EP) */
+    .label-chip {
+        @apply inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium tracking-wide;
+        color: var(--chip-fg);
+        background-color: var(--chip-bg);
+        border: 1px solid var(--chip-border);
+    }
+
+    .label-chip--filter {
+        @apply px-2 py-0.5 text-[11px];
+    }
+
+    .label-chip--active {
+        box-shadow: inset 0 0 0 1px var(--brand-primary);
+        border-color: var(--brand-primary);
+        opacity: 1;
+    }
+
+    .label-chip--muted {
+        opacity: 0.7;
+    }
+
+    .label-chip--muted:hover {
+        opacity: 1;
+    }
+
+    .prio-dot {
+        @apply inline-block h-1.5 w-1.5 shrink-0 rounded-full;
+        background-color: currentColor;
+    }
+
+    /* Chat estilo WhatsApp (oscuro corporativo) */
+    .chat-thread {
+        background-color: #0b141a;
+        background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        background-size: 18px 18px;
+    }
+
+    .chat-bubble {
+        box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.25);
+    }
+
+    .chat-bubble--mine {
+        border-radius: 12px 12px 4px 12px;
+        background-color: #1a4d3e;
+    }
+
+    .chat-bubble--theirs {
+        border-radius: 12px 12px 12px 4px;
+        background-color: #1f2c34;
+    }
+
+    .board-columns {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(4, minmax(260px, 1fr));
+        align-content: start;
+        width: 100%;
+    }
+
+    .board-column {
+        min-width: 0;
+        min-height: 180px;
+        max-height: 100%;
+    }
+
+    .board-card {
+        border-radius: 10px;
+        border-left-width: 3px;
+        border-left-style: solid;
+    }
+
+    /* Solo tamaño en filtros del board; colores los pone EP dark */
+    .board-filters .el-select .el-select__wrapper,
+    .board-filters .el-input__wrapper {
+        min-height: 28px;
+    }
+
+    .board-filters .el-select__placeholder,
+    .board-filters .el-select__selected-item {
+        font-size: 12px;
+    }
+
+    @media (max-width: 1280px) {
+        .board-columns {
+            grid-template-columns: repeat(2, minmax(260px, 1fr));
+        }
+    }
+
+    @media (max-width: 640px) {
+        .board-columns {
+            grid-template-columns: repeat(4, minmax(260px, 1fr));
+            overflow-x: auto;
+            padding-bottom: 8px;
+        }
+
+        .board-column {
+            min-width: 260px;
+        }
+    }
+}
+
+/* Flyout del menú colapsado */
+.sidebar-flyout.el-popover.el-popper {
+    background: #12171d !important;
+    border: 1px solid #2a3340 !important;
+    border-radius: 10px !important;
+    padding: 10px !important;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45) !important;
+}
+
+.sidebar-flyout.el-popper .el-popper__arrow::before {
+    background: #12171d !important;
+    border: 1px solid #2a3340 !important;
+}

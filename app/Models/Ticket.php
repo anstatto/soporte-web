@@ -14,13 +14,28 @@ class Ticket extends Model
         'descripcion',
         'departamento_id',
         'estado_id',
+        'prioridad',
+        'position',
         'user_id',
-        'fecha_entrega', // Nuevo campo
-        'recordatorio' // Nuevo campo
+        'workspace_id',
+        'fecha_entrega',
+        'recordatorio',
     ];
 
     protected $with = ['user', 'departamento', 'estado'];
-    protected $dates = ['fecha_entrega', 'recordatorio'];
+
+    protected $casts = [
+        'fecha_entrega' => 'datetime',
+        'recordatorio' => 'datetime',
+        'position' => 'integer',
+    ];
+
+    public const PRIORIDADES = [
+        'baja' => ['label' => 'Baja', 'emoji' => '', 'color' => '#3D7A5F'],
+        'media' => ['label' => 'Media', 'emoji' => '', 'color' => '#2F6FAD'],
+        'alta' => ['label' => 'Alta', 'emoji' => '', 'color' => '#B7791F'],
+        'urgente' => ['label' => 'Urgente', 'emoji' => '', 'color' => '#C4554D'],
+    ];
 
     public function user()
     {
@@ -42,33 +57,18 @@ class Ticket extends Model
         return $this->hasMany(Comentario::class);
     }
 
-    public function getEstadoActualAttribute()
-    {
-        return $this->estado->nombre;
-    }
-
-    public function getDepartamentoAsignadoAttribute()
-    {
-        return $this->departamento->nombre;
-    }
-
-    public function getUsuarioCreadorAttribute()
-    {
-        return $this->user->name;
-    }
-
-    public function getTiempoAbiertoAttribute()
-    {
-        return $this->created_at->diffForHumans();
-    }
-
-    public function getEstaAbiertoAttribute()
-    {
-        return $this->estado->nombre !== 'Cerrado';
-    }
-
     public function users()
     {
         return $this->belongsToMany(User::class);
+    }
+
+    public function etiquetas()
+    {
+        return $this->belongsToMany(Etiqueta::class);
+    }
+
+    public function adjuntos()
+    {
+        return $this->hasMany(TicketAdjunto::class);
     }
 }

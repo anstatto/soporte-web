@@ -4,23 +4,14 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Foundation\Auth\AuthenticatesUsers;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class LoginController extends Controller
 {
-    /*
-    |--------------------------------------------------------------------------
-    | Login Controller
-    |--------------------------------------------------------------------------
-    |
-    | This controller handles authenticating users for the application and
-    | redirecting them to your home screen. The controller uses a trait
-    | to conveniently provide its functionality to your applications.
-    |
-    */
-
     use AuthenticatesUsers;
 
-    protected $redirectTo = '/';
+    protected $redirectTo = '/tickets/board';
 
     public function __construct()
     {
@@ -28,13 +19,34 @@ class LoginController extends Controller
         $this->middleware('auth')->only('logout');
     }
 
-    /**
-     * Get the login username to be used by the controller.
-     *
-     * @return string
-     */
+    public function showLoginForm()
+    {
+        return Inertia::render('Auth/Login');
+    }
+
     public function username()
     {
         return 'username';
+    }
+
+    protected function authenticated(Request $request, $user)
+    {
+        if (isset($user->is_active) && ! $user->is_active) {
+            auth()->logout();
+
+            return back()->withErrors([
+                'username' => 'Tu cuenta está desactivada. Contacta a soporte.',
+            ]);
+        }
+    }
+
+    public function logout(Request $request)
+    {
+        $this->guard()->logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        // Full reload so the CSRF meta/cookie match the new session (avoids 419 on re-login)
+        return Inertia::location(route('login'));
     }
 }
