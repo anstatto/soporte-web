@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Departamento;
+use App\Models\Setting;
 use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Http\Request;
@@ -56,6 +57,9 @@ class HandleInertiaRequests extends Middleware
             'unreadNotificationsCount' => $user
                 ? $user->unreadNotifications()->count()
                 : 0,
+            'unreadChatsCount' => $user
+                ? \App\Support\ChatInbox::unreadChatsCount($user)
+                : 0,
             'catalog' => $user ? [
                 'departamentos' => Departamento::orderBy('nombre')->get(['id', 'nombre']),
                 'agentes' => $user->esSoporte()
@@ -68,6 +72,12 @@ class HandleInertiaRequests extends Middleware
                         ->get(['id', 'name', 'username'])
                     : [],
             ] : null,
+            'appSettings' => [
+                'app_name' => Setting::get('app_name'),
+                'company_name' => Setting::get('company_name'),
+                'support_email' => Setting::get('support_email'),
+            ],
+            'livekit' => \App\Support\LiveKitConfig::status(),
         ];
     }
 }

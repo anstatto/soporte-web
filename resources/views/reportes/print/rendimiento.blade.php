@@ -1,37 +1,126 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <title>Reporte de Rendimiento de Soportes</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-</head>
-<body class="bg-gray-100 text-gray-900">
-    <div class="container mx-auto p-4">
-        <h1 class="text-3xl font-bold mb-4">Reporte de Rendimiento de Soportes</h1>
-        @php
-            $totalTickets = $ticketsPorUsuario->flatten()->count();
-            $tiempoPromedioResolucion = $ticketsPorUsuario->flatten()->avg('tiempo_resolucion');
-            $ticketsPorPrioridad = $ticketsPorUsuario->flatten()->groupBy('prioridad');
-        @endphp
-        <h2 class="text-2xl font-semibold mb-2">Resumen General</h2>
-        <p class="mb-2">Total de tickets: {{ $totalTickets }}</p>
-        <p class="mb-4">Tiempo promedio de resolución: {{ number_format($tiempoPromedioResolucion, 2) }} horas</p>
+@extends('reportes.print.layout')
 
-        <h3 class="text-xl font-semibold mb-2">Tickets por Prioridad</h3>
-        <ul class="list-disc list-inside mb-4">
-            @foreach($ticketsPorPrioridad as $prioridad => $tickets)
-                <li>{{ $prioridad }}: {{ $tickets->count() }} ({{ number_format($tickets->count() / $totalTickets * 100, 2) }}%)</li>
-            @endforeach
-        </ul>
+@section('title', 'Reporte de rendimiento')
 
-        <h2 class="text-2xl font-semibold mb-2">Rendimiento por Usuario</h2>
-        @foreach($ticketsPorUsuario as $userId => $tickets)
-            <div class="mb-4">
-                <h3 class="text-xl font-semibold">{{ $tickets->first()->user->name }}</h3>
-                <p>Total de tickets: {{ $tickets->count() }}</p>
-                <p>Tiempo promedio de resolución: {{ number_format($tickets->avg('tiempo_resolucion'), 2) }} horas</p>
+@section('content')
+    @php
+        $all = $ticketsPorUsuario->flatten(1);
+        $total = $all->count();
+        $cerrados = $all->filter(fn ($t) => $t->tiempo_resolucion_horas !== null);
+        $promedioGlobal = $cerrados->avg('tiempo_resolucion_horas');
+        $porPrioridad = $all->groupBy(fn ($t) => ucfirst($t->prioridad ?? 'media'));
+        $abiertos = $total - $cerrados->count();
+    @endphp
+
+    <div class="kpi-row">
+        <div class="kpi">
+            <div class="label">Total</div>
+            <div class="value">{{ $total }}</div>
+        </div>
+        <div class="kpi">
+            <div class="label">Cerrados</div>
+            <div class="value">{{ $cerrados->count() }}</div>
+        </div>
+        <div class="kpi">
+            <div class="label">Abiertos</div>
+            <div class="value">{{ $abiertos }}</div>
+        </div>
+        <div class="kpi">
+            <div class="label">Prom. resolución</div>
+            <div class="value">
+                @if($promedioGlobal !== null)
+                    {{ number_format($promedioGlobal, 1) }}h
+                @else
+                    —
+                @endif
             </div>
-        @endforeach
+        </div>
     </div>
-</body>
-</html>
+
+    <h2>Tickets por prioridad</h2>
+    @if($total === 0)
+        <p class="muted">No hay tickets en el período seleccionado.</p>
+    @else
+        <table>
+            <thead>
+                <tr>
+                    <th>Prioridad</th>
+                    <th style="width:20%">Cantidad</th>
+                    <th style="width:20%">%</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($porPrioridad as $prioridad => $group)
+                    <tr>
+                        <td>{{ $prioridad }}</td>
+                        <td>{{ $group->count() }}</td>
+                        <td>{{ number_format(($group->count() / max($total, 1)) * 100, 1) }}%</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    @endif
+
+    <h2>Rendimiento por usuario</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Usuario</th>
+                <th style="width:14%">Total</th>
+                <th style="width:14%">Cerrados</th>
+                <th style="width:18%">Prom. horas</th>
+                <th style="width:18%">Tasa cierre</th>
+            </tr>
+        </thead>
+        <tbody>
+            @forelse($ticketsPorUsuario as $userId => $tickets)
+                @php
+                    $uCerrados = $tickets->filter(fn ($t) => $t->tiempo_resolucion_horas !== null);
+                    $prom = $uCerrados->avg('tiempo_resolucion_horas');
+                    $tasa = $tickets->count() > 0 ? ($uCerrados->count() / $tickets->count()) * 100 : 0;
+                @endphp
+                <tr>
+                    <td>{{ $tickets->first()->user?->name ?? 'Sin usuario' }}</td>
+                    <td>{{ $tickets->count() }}</td>
+                    <td>{{ $uCerrados->count() }}</td>
+                    <td>{{ $prom !== null ? number_format($prom, 1) . ' h' : '—' }}</td>
+                    <td>{{ number_format($tasa, 1) }}%</td>
+                </tr>
+            @empty
+                <tr>
+                    <td colspan="5" class="muted">Sin datos</td>
+                </tr>
+            @endforelse
+        </tbody>
+    </table>
+
+    <h2>Detalle de tickets cerrados</h2>
+    <table>
+        <thead>
+            <tr>
+                <th style="width:8%">ID</th>
+                <th>Título</th>
+                <th style="width:18%">Usuario</th>
+                <th style="width:12%">Prioridad</th>
+                <th style="width:14%">Horas</th>
+                <th style="width:16%">Cerrado</th>
+            </tr>
+        </thead>
+        <tbody>
+            @forelse($cerrados->sortByDesc('tiempo_resolucion_horas') as $ticket)
+                <tr>
+                    <td>#{{ $ticket->id }}</td>
+                    <td>{{ $ticket->titulo }}</td>
+                    <td>{{ $ticket->user?->name ?? '—' }}</td>
+                    <td>{{ ucfirst($ticket->prioridad ?? 'media') }}</td>
+                    <td>{{ number_format($ticket->tiempo_resolucion_horas, 1) }} h</td>
+                    <td>{{ optional($ticket->updated_at)->format('d/m/Y H:i') }}</td>
+                </tr>
+            @empty
+                <tr>
+                    <td colspan="6" class="muted">No hay tickets cerrados en el período.</td>
+                </tr>
+            @endforelse
+        </tbody>
+    </table>
+@endsection

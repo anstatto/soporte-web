@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Models\Conversacion;
+use App\Models\Setting;
 use App\Models\Ticket;
 use App\Policies\ConversacionPolicy;
 use App\Policies\TicketPolicy;
@@ -20,5 +21,11 @@ class AppServiceProvider extends ServiceProvider
     {
         Gate::policy(Ticket::class, TicketPolicy::class);
         Gate::policy(Conversacion::class, ConversacionPolicy::class);
+
+        try {
+            Setting::applyToConfig();
+        } catch (\Throwable) {
+            // Tabla settings aún no migrada
+        }
     }
 }

@@ -29,6 +29,10 @@ class RolesAndPermissionsSeeder extends Seeder
             'create departamento',
             'view departamento',
             'delete departamento',
+            'edit etiqueta',
+            'create etiqueta',
+            'view etiqueta',
+            'delete etiqueta',
             'dashboard resumen',
             'dashboard estadistica',
             'dashboard actividad',
@@ -37,6 +41,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'generate reports',
             'manage users',
             'view users',
+            'use calls',
+            'manage calls',
         ];
 
         foreach ($permissions as $permission) {
@@ -63,11 +69,13 @@ class RolesAndPermissionsSeeder extends Seeder
             'chat with users',
             'view estado',
             'view departamento',
+            'view etiqueta',
             'dashboard resumen',
             'dashboard estadistica',
             'dashboard actividad',
             'view reports',
             'generate reports',
+            'use calls',
         ]);
 
         $solicitanteRole = Role::firstOrCreate(['name' => 'solicitante', 'guard_name' => 'web']);
@@ -79,6 +87,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'comment on tickets',
             'chat with users',
             'dashboard actividad',
+            'use calls',
         ]);
 
         // Migrar rol legado "user" → "soporte"

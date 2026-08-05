@@ -26,8 +26,8 @@ class ComentarioController extends Controller
 
         $request->validate([
             'contenido' => 'nullable|string|max:5000',
-            'imagen' => 'nullable|file|max:10240|mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx',
-            'archivo' => 'nullable|file|max:10240|mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx',
+            'imagen' => 'nullable|file|max:15360|mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx,webm,ogg,mp3,m4a,wav,aac,mpeg,mpga,opus',
+            'archivo' => 'nullable|file|max:15360|mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx,webm,ogg,mp3,m4a,wav,aac,mpeg,mpga,opus',
         ]);
 
         $contenido = trim((string) $request->input('contenido', ''));
@@ -94,12 +94,19 @@ class ComentarioController extends Controller
 
         $recipients = collect();
         if (Auth::user()->esSoporte()) {
+            // Agente escribe → avisa al solicitante y a otros asignados (no a todo el staff)
             if ($ticket->user_id !== Auth::id()) {
                 $recipients->push($ticket->user);
             }
             $recipients = $recipients->merge($ticket->users()->where('users.id', '!=', Auth::id())->get());
         } else {
-            $recipients = User::role(['admin', 'soporte'])->where('id', '!=', Auth::id())->get();
+            // Solicitante escribe → solo asignados; si nadie está asignado, avisar a soporte
+            $assignees = $ticket->users()->where('users.id', '!=', Auth::id())->get();
+            if ($assignees->isNotEmpty()) {
+                $recipients = $assignees;
+            } else {
+                $recipients = User::role(['admin', 'soporte'])->where('id', '!=', Auth::id())->get();
+            }
         }
 
         $recipients = $recipients
@@ -118,9 +125,24 @@ class ComentarioController extends Controller
         $recipients = $recipients->reject(fn ($u) => in_array($u->id, $mutedIds, true));
 
         if ($recipients->isNotEmpty()) {
+            $kind = $file
+                ? TicketAdjunto::kindFromMime(
+                    $file->getMimeType() ?: $file->getClientMimeType(),
+                    $file->getClientOriginalName()
+                )
+                : null;
+            $excerpt = $contenido !== ''
+                ? $contenido
+                : match ($kind) {
+                    'audio' => '🎤 Nota de voz',
+                    'image' => 'Envió una captura',
+                    'pdf', 'word' => 'Envió un archivo',
+                    default => $file ? 'Envió un archivo' : null,
+                };
+
             Notification::send(
                 $recipients,
-                new TicketMessageNotification($ticket, $contenido !== '' ? $contenido : null, (bool) $file)
+                new TicketMessageNotification($ticket, $excerpt, $kind === 'image')
             );
         }
 

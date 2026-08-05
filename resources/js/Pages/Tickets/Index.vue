@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { useDebounceFn } from '@vueuse/core';
 import axios from 'axios';
@@ -7,6 +7,8 @@ import { toast } from 'vue-sonner';
 import { timeAgo } from '@/Composables/useDate';
 import { usePermissions } from '@/Composables/usePermissions';
 import FileViewer from '@/Components/Files/FileViewer.vue';
+import AudioMessage from '@/Components/Chat/AudioMessage.vue';
+import VoiceRecorder from '@/Components/Chat/VoiceRecorder.vue';
 
 const props = defineProps({
     tickets: Object,
@@ -27,6 +29,10 @@ const props = defineProps({
 
 const page = usePage();
 const { can } = usePermissions();
+const appCall = inject('appCall', null);
+const livekitEnabled = computed(() => !!page.props.livekit?.enabled);
+const allowVideo = computed(() => !!page.props.livekit?.allow_video);
+const canUseCalls = computed(() => can('use calls') || !!page.props.auth?.user?.is_admin);
 
 const form = reactive({
     titulo: props.filters?.titulo || '',
@@ -289,6 +295,37 @@ const avatar = (name) =>
 const isMine = (c) =>
     c.mine === true || Number(c.user_id ?? c.user?.id) === meId.value;
 
+/** Inserta separador “Mensajes nuevos” antes del primer mensaje ajeno no leído */
+const withUnreadDivider = (messages, thread) => {
+    const list = messages || [];
+    if (!thread?.had_unread || !list.length) {
+        return list.map((m) => ({ kind: 'msg', msg: m }));
+    }
+    const after = thread.highlight_after ? new Date(thread.highlight_after).getTime() : null;
+    let dividerAt = -1;
+    for (let i = 0; i < list.length; i++) {
+        const m = list[i];
+        if (isMine(m)) continue;
+        const t = m.created_at ? new Date(m.created_at).getTime() : 0;
+        if (after == null || t > after) {
+            dividerAt = i;
+            break;
+        }
+    }
+    if (dividerAt < 0) {
+        return list.map((m) => ({ kind: 'msg', msg: m }));
+    }
+    const out = [];
+    list.forEach((m, i) => {
+        if (i === dividerAt) out.push({ kind: 'divider', id: 'unread-divider' });
+        out.push({ kind: 'msg', msg: m });
+    });
+    return out;
+};
+
+const ticketThreadItems = computed(() => withUnreadDivider(chat.value?.comentarios, chat.value));
+const dmThreadItems = computed(() => withUnreadDivider(dmChat.value?.mensajes, dmChat.value));
+
 const msgTime = (iso) => {
     if (!iso) return '';
     try {
@@ -388,6 +425,45 @@ const openCreate = () => window.dispatchEvent(new CustomEvent('soporte:open-crea
 const openBoard = () => {
     if (!chat.value) return;
     router.visit(`/tickets/board?card=${chat.value.id}`);
+};
+
+const ticketCallTargets = computed(() =>
+    (chat.value?.participantes || []).filter((p) => Number(p.id) !== meId.value),
+);
+
+const startDmCall = (video = false) => {
+    if (!livekitEnabled.value) {
+        toast.error('Llamadas desactivadas. Configúralas en Ajustes (LiveKit Cloud gratis).');
+        return;
+    }
+    if (video && !allowVideo.value) {
+        toast.message('Video desactivado (modo económico). Usa audio o actívalo en Ajustes.');
+        video = false;
+    }
+    const peerId = dmChat.value?.peer?.id;
+    if (!peerId || !appCall) return;
+    appCall.start({
+        calleeId: peerId,
+        video,
+        context: { type: 'dm', id: dmChat.value.id },
+    });
+};
+
+const startTicketCall = (userId, video = false) => {
+    if (!livekitEnabled.value) {
+        toast.error('Llamadas desactivadas. Configúralas en Ajustes (LiveKit Cloud gratis).');
+        return;
+    }
+    if (video && !allowVideo.value) {
+        toast.message('Video desactivado (modo económico). Usa audio o actívalo en Ajustes.');
+        video = false;
+    }
+    if (!chat.value || !appCall) return;
+    appCall.start({
+        calleeId: userId,
+        video,
+        context: { type: 'ticket', id: chat.value.id },
+    });
 };
 
 const appendComment = async (raw, { forceScroll = false } = {}) => {
@@ -648,7 +724,34 @@ const formatSize = (bytes) => {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
-const kindLabel = (kind) => ({ image: 'IMG', pdf: 'PDF', word: 'DOC', other: 'FILE' }[kind] || 'FILE');
+const kindLabel = (kind) => ({
+    image: 'IMG',
+    pdf: 'PDF',
+    word: 'DOC',
+    audio: 'AUDIO',
+    other: 'FILE',
+}[kind] || 'FILE');
+
+const isAudioFile = (file) => {
+    if (!file) return false;
+    const t = (file.type || '').toLowerCase();
+    const n = (file.name || '').toLowerCase();
+    return t.startsWith('audio/') || t === 'video/webm' || /\.(webm|ogg|oga|mp3|m4a|wav|aac|opus)$/.test(n);
+};
+
+const onVoiceRecorded = async (file) => {
+    clearImage();
+    pendingImage.value = file;
+    imagePreview.value = null;
+    await sendComment();
+};
+
+const onDmVoiceRecorded = async (file) => {
+    clearDmFile();
+    dmPendingFile.value = file;
+    dmFilePreview.value = null;
+    await sendDmMessage();
+};
 
 const onFilePick = (e) => {
     const file = e.target.files?.[0];
@@ -697,8 +800,8 @@ const sendComment = async () => {
         ? {
             id: tempId,
             nombre: pendingImage.value.name,
-            kind: pendingImage.value.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'word',
-            url: null,
+            kind: isAudioFile(pendingImage.value) ? 'audio' : (pendingImage.value.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'word'),
+            url: isAudioFile(pendingImage.value) ? URL.createObjectURL(pendingImage.value) : null,
             pending: true,
         }
         : null;
@@ -791,13 +894,14 @@ const sendDmMessage = async () => {
     const tempId = `tmp-${Date.now()}`;
     const file = dmPendingFile.value;
     const isImage = file?.type.startsWith('image/');
+    const isAudio = isAudioFile(file);
 
     dmChat.value.mensajes.push({
         id: tempId,
         contenido: text || null,
-        url: isImage ? dmFilePreview.value : null,
+        url: isImage || isAudio ? (dmFilePreview.value || (file ? URL.createObjectURL(file) : null)) : null,
         nombre: file?.name || null,
-        kind: isImage ? 'image' : file ? (file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'word') : null,
+        kind: isImage ? 'image' : isAudio ? 'audio' : file ? (file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'word') : null,
         size: file?.size || null,
         user: { id: page.props.auth.user.id, name: page.props.auth.user.name },
         user_id: page.props.auth.user.id,
@@ -966,17 +1070,17 @@ onUnmounted(() => {
                 <div class="mb-2 flex flex-wrap gap-1">
                     <button
                         v-for="opt in [
-                            { id: 'all', label: 'Todos' },
-                            { id: 'unread', label: 'No leídos' },
-                            { id: 'starred', label: 'Más tarde' },
-                            { id: 'archived', label: 'Archivados' },
+                            { id: 'all', label: 'Todos', active: 'bg-[#579DFF] text-white' },
+                            { id: 'unread', label: 'No leídos', active: 'bg-[#25D366] text-[#052e16]' },
+                            { id: 'starred', label: 'Más tarde', active: 'bg-[#F5C518] text-[#1a1500]' },
+                            { id: 'archived', label: 'Archivados', active: 'bg-[#8B9AAB] text-[#0f1419]' },
                         ]"
                         :key="opt.id"
                         type="button"
-                        class="rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors"
+                        class="rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors"
                         :class="
                             (inboxFilter || 'all') === opt.id
-                                ? 'bg-[#579DFF]/20 text-[#85B8FF]'
+                                ? opt.active
                                 : 'bg-[#1a222c] text-[#8B9AAB] hover:text-white'
                         "
                         @click="setInboxFilter(opt.id)"
@@ -1012,11 +1116,18 @@ onUnmounted(() => {
                     v-for="t in ticketRows"
                     :key="t.id"
                     class="group relative flex w-full items-start gap-3 border-b border-[#2a3340]/60 px-3 py-3 text-left transition-colors hover:bg-white/5"
-                    :class="chat?.id === t.id ? 'bg-[#579DFF]/12' : ''"
+                    :class="[
+                        chat?.id === t.id ? 'inbox-row--active' : '',
+                        t.unread ? 'inbox-row--unread' : '',
+                    ]"
                 >
                     <button type="button" class="flex min-w-0 flex-1 items-start gap-3 text-left" @click="openChat(t.id)">
                         <div class="relative shrink-0">
-                            <el-avatar :size="44" :src="avatar(t.peer?.name || t.user?.name)" />
+                            <el-avatar
+                                :size="44"
+                                :src="avatar(t.peer?.name || t.user?.name)"
+                                :class="t.unread ? 'avatar-ring--unread' : ''"
+                            />
                             <span
                                 v-if="t.meta?.pinned"
                                 class="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#22272B] text-[#85B8FF]"
@@ -1029,28 +1140,33 @@ onUnmounted(() => {
                             <div class="flex items-baseline justify-between gap-2">
                                 <p
                                     class="truncate text-sm"
-                                    :class="t.unread ? 'font-bold text-white' : 'font-semibold text-white'"
+                                    :class="t.unread ? 'font-bold text-white' : 'font-semibold text-[#E8EEF4]'"
                                 >
                                     {{ t.peer?.name || t.user?.name || 'Chat' }}
                                 </p>
                                 <span
                                     class="shrink-0 text-[10px] tabular-nums"
-                                    :class="t.unread ? 'font-semibold text-[#25D366]' : 'text-[#8B9AAB]'"
+                                    :class="t.unread ? 'font-bold text-[#25D366]' : 'text-[#8B9AAB]'"
                                 >
                                     {{ listTime(t.last_activity || t.created_at) }}
                                 </span>
                             </div>
-                            <p class="truncate text-xs text-[#85B8FF]/90">{{ t.titulo }}</p>
+                            <p
+                                class="truncate text-xs"
+                                :class="t.unread ? 'font-semibold text-[#85B8FF]' : 'text-[#85B8FF]/80'"
+                            >
+                                {{ t.titulo }}
+                            </p>
                             <div class="mt-0.5 flex items-center gap-2">
                                 <p
                                     class="min-w-0 flex-1 truncate text-xs"
-                                    :class="t.unread ? 'font-medium text-[#C7D1DB]' : 'text-[#8B9AAB]'"
+                                    :class="t.unread ? 'font-semibold text-white' : 'text-[#8B9AAB]'"
                                 >
                                     {{ previewText(t) }}
                                 </p>
                                 <span
                                     v-if="t.unread"
-                                    class="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[#25D366] px-1.5 text-[10px] font-bold text-[#052e16]"
+                                    class="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[#25D366] px-1.5 text-[10px] font-extrabold text-[#052e16] shadow-[0_0_8px_rgba(37,211,102,0.45)]"
                                 >
                                     {{ t.unread > 99 ? '99+' : t.unread }}
                                 </span>
@@ -1060,10 +1176,21 @@ onUnmounted(() => {
                             <div class="mt-1.5 flex flex-wrap items-center gap-1">
                                 <span
                                     v-if="t.estado"
-                                    class="inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium text-white"
+                                    class="status-pill"
                                     :style="{ backgroundColor: t.estado.color || '#579DFF' }"
                                 >
                                     {{ t.estado.nombre }}
+                                </span>
+                                <span
+                                    v-if="t.prioridad"
+                                    class="priority-pill"
+                                    :style="{
+                                        color: t.prioridad_color,
+                                        borderColor: t.prioridad_color,
+                                        backgroundColor: `${t.prioridad_color}22`,
+                                    }"
+                                >
+                                    {{ t.prioridad_label || t.prioridad }}
                                 </span>
                                 <el-tag v-if="t.sin_asignar && isSoporte" size="small" type="warning" effect="dark">
                                     Sin asignar
@@ -1131,23 +1258,30 @@ onUnmounted(() => {
                         v-for="c in filteredDmConversations"
                         :key="c.id"
                         class="group relative flex w-full items-start gap-3 border-b border-[#2a3340]/60 px-3 py-3 text-left transition-colors hover:bg-white/5"
-                        :class="dmChat?.id === c.id ? 'bg-[#579DFF]/12' : ''"
+                        :class="[
+                            dmChat?.id === c.id ? 'inbox-row--active' : '',
+                            c.unread ? 'inbox-row--unread' : '',
+                        ]"
                     >
                         <button type="button" class="flex min-w-0 flex-1 items-start gap-3 text-left" @click="openDm(c.id)">
                             <div class="relative shrink-0">
-                                <el-avatar :size="44" :src="avatar(c.peer?.name)" />
+                                <el-avatar
+                                    :size="44"
+                                    :src="avatar(c.peer?.name)"
+                                    :class="c.unread ? 'avatar-ring--unread' : ''"
+                                />
                             </div>
                             <div class="min-w-0 flex-1">
                                 <div class="flex items-baseline justify-between gap-2">
                                     <p
                                         class="truncate text-sm"
-                                        :class="c.unread ? 'font-bold text-white' : 'font-semibold text-white'"
+                                        :class="c.unread ? 'font-bold text-white' : 'font-semibold text-[#E8EEF4]'"
                                     >
                                         {{ c.peer?.name || 'Usuario' }}
                                     </p>
                                     <span
                                         class="shrink-0 text-[10px] tabular-nums"
-                                        :class="c.unread ? 'font-semibold text-[#25D366]' : 'text-[#8B9AAB]'"
+                                        :class="c.unread ? 'font-bold text-[#25D366]' : 'text-[#8B9AAB]'"
                                     >
                                         {{ listTime(c.last_message?.created_at || c.updated_at) }}
                                     </span>
@@ -1155,13 +1289,13 @@ onUnmounted(() => {
                                 <div class="mt-0.5 flex items-center gap-2">
                                     <p
                                         class="min-w-0 flex-1 truncate text-xs"
-                                        :class="c.unread ? 'font-medium text-[#C7D1DB]' : 'text-[#8B9AAB]'"
+                                        :class="c.unread ? 'font-semibold text-white' : 'text-[#8B9AAB]'"
                                     >
                                         {{ dmPreviewText(c) }}
                                     </p>
                                     <span
                                         v-if="c.unread"
-                                        class="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[#25D366] px-1.5 text-[10px] font-bold text-[#052e16]"
+                                        class="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[#25D366] px-1.5 text-[10px] font-extrabold text-[#052e16] shadow-[0_0_8px_rgba(37,211,102,0.45)]"
                                     >
                                         {{ c.unread > 99 ? '99+' : c.unread }}
                                     </span>
@@ -1284,6 +1418,79 @@ onUnmounted(() => {
                         </div>
                     </div>
 
+                    <template v-if="canUseCalls && ticketCallTargets.length">
+                        <el-dropdown
+                            v-if="ticketCallTargets.length > 1"
+                            trigger="click"
+                            @command="(id) => startTicketCall(id, false)"
+                        >
+                            <el-button
+                                size="small"
+                                circle
+                                :title="livekitEnabled ? 'Llamar' : 'Configura LiveKit en .env'"
+                                :class="!livekitEnabled ? 'opacity-45' : ''"
+                            >
+                                <el-icon><Phone /></el-icon>
+                            </el-button>
+                            <template #dropdown>
+                                <el-dropdown-menu>
+                                    <el-dropdown-item
+                                        v-for="p in ticketCallTargets"
+                                        :key="p.id"
+                                        :command="p.id"
+                                    >
+                                        Llamar a {{ p.name }}
+                                    </el-dropdown-item>
+                                </el-dropdown-menu>
+                            </template>
+                        </el-dropdown>
+                        <el-button
+                            v-else
+                            size="small"
+                            circle
+                            :title="livekitEnabled ? 'Llamar' : 'Configura LiveKit en .env'"
+                            :class="!livekitEnabled ? 'opacity-45' : ''"
+                            @click="startTicketCall(ticketCallTargets[0].id, false)"
+                        >
+                            <el-icon><Phone /></el-icon>
+                        </el-button>
+                        <el-dropdown
+                            v-if="allowVideo && ticketCallTargets.length > 1"
+                            trigger="click"
+                            @command="(id) => startTicketCall(id, true)"
+                        >
+                            <el-button
+                                size="small"
+                                circle
+                                :title="livekitEnabled ? 'Videollamada' : 'Configura LiveKit en Ajustes'"
+                                :class="!livekitEnabled ? 'opacity-45' : ''"
+                            >
+                                <el-icon><VideoCamera /></el-icon>
+                            </el-button>
+                            <template #dropdown>
+                                <el-dropdown-menu>
+                                    <el-dropdown-item
+                                        v-for="p in ticketCallTargets"
+                                        :key="'v-' + p.id"
+                                        :command="p.id"
+                                    >
+                                        Video con {{ p.name }}
+                                    </el-dropdown-item>
+                                </el-dropdown-menu>
+                            </template>
+                        </el-dropdown>
+                        <el-button
+                            v-else-if="allowVideo"
+                            size="small"
+                            circle
+                            :title="livekitEnabled ? 'Videollamada' : 'Configura LiveKit en Ajustes'"
+                            :class="!livekitEnabled ? 'opacity-45' : ''"
+                            @click="startTicketCall(ticketCallTargets[0].id, true)"
+                        >
+                            <el-icon><VideoCamera /></el-icon>
+                        </el-button>
+                    </template>
+
                     <el-dropdown
                         trigger="click"
                         @command="(cmd) => onRowMenu('ticket', { id: chat.id, unread: 0, meta: chat.meta || {} }, cmd)"
@@ -1350,66 +1557,85 @@ onUnmounted(() => {
                         {{ chat.descripcion }}
                     </div>
 
-                    <div
-                        v-for="c in chat.comentarios"
-                        :key="c.id"
-                        class="flex gap-2"
-                        :class="[isMine(c) ? 'flex-row-reverse' : 'flex-row', c.pending ? 'opacity-60' : '']"
-                    >
+                    <template v-for="item in ticketThreadItems" :key="item.kind === 'divider' ? item.id : item.msg.id">
+                        <div
+                            v-if="item.kind === 'divider'"
+                            class="my-3 flex items-center gap-3"
+                        >
+                            <div class="h-px flex-1 bg-[#25D366]/70" />
+                            <span class="unread-divider-pill shrink-0 rounded-full px-2.5 py-0.5 text-[10px] uppercase">
+                                Mensajes nuevos
+                            </span>
+                            <div class="h-px flex-1 bg-[#25D366]/70" />
+                        </div>
+                        <div
+                            v-else
+                            class="flex gap-2"
+                            :class="[isMine(item.msg) ? 'flex-row-reverse' : 'flex-row', item.msg.pending ? 'opacity-60' : '']"
+                        >
                         <img
-                            v-if="!isMine(c)"
-                            :src="avatar(c.user?.name)"
+                            v-if="!isMine(item.msg)"
+                            :src="avatar(item.msg.user?.name)"
                             class="mt-1 h-8 w-8 shrink-0 rounded-full"
                             alt=""
                         />
                         <div
                             class="chat-bubble max-w-[78%] px-3 py-2 text-sm text-[#E8EEF4] sm:max-w-[65%]"
-                            :class="isMine(c) ? 'chat-bubble--mine' : 'chat-bubble--theirs'"
+                            :class="isMine(item.msg) ? 'chat-bubble--mine' : 'chat-bubble--theirs'"
                         >
                             <p
-                                v-if="!isMine(c)"
+                                v-if="!isMine(item.msg)"
                                 class="mb-0.5 text-[11px] font-semibold text-[#85B8FF]"
                             >
-                                {{ c.user?.name }}
+                                {{ item.msg.user?.name }}
                             </p>
                             <p
-                                v-if="c.contenido"
+                                v-if="item.msg.contenido"
                                 class="whitespace-pre-wrap leading-relaxed"
-                                v-html="renderMentions(c.contenido)"
+                                v-html="renderMentions(item.msg.contenido)"
                             />
+                            <div
+                                v-if="item.msg.adjunto?.kind === 'audio' && item.msg.adjunto?.url"
+                                class="mt-1.5"
+                            >
+                                <AudioMessage
+                                    :src="item.msg.adjunto.url"
+                                    :mine="isMine(item.msg)"
+                                    :name="item.msg.adjunto.nombre || 'Nota de voz'"
+                                />
+                            </div>
                             <button
-                                v-if="c.imagen_url"
+                                v-if="item.msg.imagen_url"
                                 type="button"
                                 class="mt-1.5 block w-full text-left"
-                                @click="openViewer({ url: c.imagen_url, nombre: 'Imagen', kind: 'image' })"
+                                @click="openViewer({ url: item.msg.imagen_url, nombre: 'Imagen', kind: 'image' })"
                             >
                                 <img
-                                    :src="c.imagen_url"
+                                    :src="item.msg.imagen_url"
                                     alt="Captura"
                                     class="max-h-52 max-w-full rounded-lg object-contain"
                                 />
                             </button>
                             <button
-                                v-if="c.adjunto && c.adjunto.kind !== 'image'"
+                                v-if="item.msg.adjunto && item.msg.adjunto.kind !== 'image' && item.msg.adjunto.kind !== 'audio'"
                                 type="button"
                                 class="mt-2 flex w-full items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2.5 py-2 text-left hover:bg-black/30"
-                                @click="openViewer(c.adjunto)"
+                                @click="openViewer(item.msg.adjunto)"
                             >
                                 <span class="rounded bg-[#579DFF]/25 px-1.5 py-0.5 text-[10px] font-bold uppercase text-[#85B8FF]">
-                                    {{ kindLabel(c.adjunto.kind) }}
+                                    {{ kindLabel(item.msg.adjunto.kind) }}
                                 </span>
-                                <span class="min-w-0 flex-1 truncate text-xs">{{ c.adjunto.nombre }}</span>
-                                <span class="text-[10px] text-[#8B9AAB]">{{ formatSize(c.adjunto.size) }}</span>
+                                <span class="min-w-0 flex-1 truncate text-xs">{{ item.msg.adjunto.nombre }}</span>
                             </button>
                             <p
-                                class="mt-1 text-right text-[10px] tabular-nums"
-                                :class="isMine(c) ? 'text-white/50' : 'text-[#8B9AAB]'"
+                                class="mt-1 text-right text-[10px]"
+                                :class="isMine(item.msg) ? 'text-white/50' : 'text-[#8B9AAB]'"
                             >
-                                {{ msgTime(c.created_at) }}
-                                <span v-if="c.pending"> · enviando</span>
+                                {{ msgTime(item.msg.created_at) }}
                             </p>
                         </div>
-                    </div>
+                        </div>
+                    </template>
 
                     <p v-if="!chat.comentarios?.length && !typingUsers.length" class="py-16 text-center text-sm text-[#8B9AAB]">
                         Sin mensajes. Escribe el primero…
@@ -1458,6 +1684,13 @@ onUnmounted(() => {
                             class="max-h-24 rounded-[10px] border border-[#2a3340]"
                             alt="Preview"
                         />
+                        <div
+                            v-else-if="pendingImage && isAudioFile(pendingImage)"
+                            class="rounded-[10px] border border-[#25D366]/40 bg-[#25D366]/10 px-3 py-2 text-xs text-[#57D9A3]"
+                        >
+                            <el-icon class="mr-1 align-middle"><Microphone /></el-icon>
+                            Nota de voz · {{ pendingImage.name }}
+                        </div>
                         <span
                             v-else-if="pendingImage"
                             class="rounded-[10px] border border-[#2a3340] bg-[#1a222c] px-3 py-2 text-xs text-[#E8EEF4]"
@@ -1476,23 +1709,25 @@ onUnmounted(() => {
                     <div class="flex items-end gap-1.5 rounded-[24px] bg-[#1a222c] px-1.5 py-1 ring-1 ring-[#2a3340]">
                         <label
                             class="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#8B9AAB] transition hover:bg-white/5 hover:text-white"
-                            title="Adjuntar imagen, PDF o Word"
+                            title="Adjuntar imagen, PDF, Word o audio"
                         >
                             <el-icon :size="18"><Paperclip /></el-icon>
                             <input
                                 type="file"
-                                accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,image/*,application/pdf"
+                                accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.webm,.ogg,.mp3,.m4a,.wav,.aac,image/*,application/pdf,audio/*"
                                 class="hidden"
                                 @change="onFilePick"
                             />
                         </label>
+
+                        <VoiceRecorder @recorded="onVoiceRecorded" />
 
                         <textarea
                             ref="composerRef"
                             v-model="comment"
                             rows="1"
                             class="max-h-28 min-h-[36px] flex-1 resize-none bg-transparent py-2 text-sm text-white placeholder:text-[#8B9AAB] focus:outline-none"
-                            placeholder="Mensaje"
+                            placeholder="Mensaje o nota de voz"
                             @paste="onPaste"
                             @input="detectMention"
                             @keydown="onComposerKeydown"
@@ -1544,6 +1779,28 @@ onUnmounted(() => {
                         </div>
                     </div>
 
+                    <template v-if="canUseCalls && dmChat.peer?.id">
+                        <el-button
+                            size="small"
+                            circle
+                            :title="livekitEnabled ? 'Llamar' : 'Configura LiveKit en .env'"
+                            :class="!livekitEnabled ? 'opacity-45' : ''"
+                            @click="startDmCall(false)"
+                        >
+                            <el-icon><Phone /></el-icon>
+                        </el-button>
+                        <el-button
+                            v-if="allowVideo"
+                            size="small"
+                            circle
+                            :title="livekitEnabled ? 'Videollamada' : 'Configura LiveKit en Ajustes'"
+                            :class="!livekitEnabled ? 'opacity-45' : ''"
+                            @click="startDmCall(true)"
+                        >
+                            <el-icon><VideoCamera /></el-icon>
+                        </el-button>
+                    </template>
+
                     <el-dropdown
                         trigger="click"
                         @command="(cmd) => onRowMenu('dm', { id: dmChat.id, unread: 0, meta: dmChat.meta || {} }, cmd)"
@@ -1575,64 +1832,85 @@ onUnmounted(() => {
                     ref="dmThreadRef"
                     class="chat-thread min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-4 sm:px-5"
                 >
-                    <div
-                        v-for="m in dmChat.mensajes"
-                        :key="m.id"
-                        class="flex gap-2"
-                        :class="[isMine(m) ? 'flex-row-reverse' : 'flex-row', m.pending ? 'opacity-60' : '']"
-                    >
+                    <template v-for="item in dmThreadItems" :key="item.kind === 'divider' ? item.id : item.msg.id">
+                        <div
+                            v-if="item.kind === 'divider'"
+                            class="my-3 flex items-center gap-3"
+                        >
+                            <div class="h-px flex-1 bg-[#25D366]/70" />
+                            <span class="unread-divider-pill shrink-0 rounded-full px-2.5 py-0.5 text-[10px] uppercase">
+                                Mensajes nuevos
+                            </span>
+                            <div class="h-px flex-1 bg-[#25D366]/70" />
+                        </div>
+                        <div
+                            v-else
+                            class="flex gap-2"
+                            :class="[isMine(item.msg) ? 'flex-row-reverse' : 'flex-row', item.msg.pending ? 'opacity-60' : '']"
+                        >
                         <img
-                            v-if="!isMine(m)"
-                            :src="avatar(m.user?.name)"
+                            v-if="!isMine(item.msg)"
+                            :src="avatar(item.msg.user?.name)"
                             class="mt-1 h-8 w-8 shrink-0 rounded-full"
                             alt=""
                         />
                         <div
                             class="chat-bubble max-w-[78%] px-3 py-2 text-sm text-[#E8EEF4] sm:max-w-[65%]"
-                            :class="isMine(m) ? 'chat-bubble--mine' : 'chat-bubble--theirs'"
+                            :class="isMine(item.msg) ? 'chat-bubble--mine' : 'chat-bubble--theirs'"
                         >
                             <p
-                                v-if="!isMine(m)"
+                                v-if="!isMine(item.msg)"
                                 class="mb-0.5 text-[11px] font-semibold text-[#85B8FF]"
                             >
-                                {{ m.user?.name }}
+                                {{ item.msg.user?.name }}
                             </p>
-                            <p v-if="m.contenido" class="whitespace-pre-wrap leading-relaxed">
-                                {{ m.contenido }}
+                            <p v-if="item.msg.contenido" class="whitespace-pre-wrap leading-relaxed">
+                                {{ item.msg.contenido }}
                             </p>
+                            <div
+                                v-if="item.msg.kind === 'audio' && item.msg.url"
+                                class="mt-1.5"
+                            >
+                                <AudioMessage
+                                    :src="item.msg.url"
+                                    :mine="isMine(item.msg)"
+                                    :name="item.msg.nombre || 'Nota de voz'"
+                                />
+                            </div>
                             <button
-                                v-if="m.kind === 'image' && m.url"
+                                v-if="item.msg.kind === 'image' && item.msg.url"
                                 type="button"
                                 class="mt-1.5 block w-full text-left"
-                                @click="openViewer({ url: m.url, nombre: m.nombre || 'Imagen', kind: 'image' })"
+                                @click="openViewer({ url: item.msg.url, nombre: item.msg.nombre || 'Imagen', kind: 'image' })"
                             >
                                 <img
-                                    :src="m.url"
+                                    :src="item.msg.url"
                                     alt="Imagen"
                                     class="max-h-52 max-w-full rounded-lg object-contain"
                                 />
                             </button>
                             <button
-                                v-if="m.url && m.kind && m.kind !== 'image'"
+                                v-if="item.msg.url && item.msg.kind && item.msg.kind !== 'image' && item.msg.kind !== 'audio'"
                                 type="button"
                                 class="mt-2 flex w-full items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2.5 py-2 text-left hover:bg-black/30"
-                                @click="openViewer({ url: m.url, nombre: m.nombre, kind: m.kind, size: m.size })"
+                                @click="openViewer({ url: item.msg.url, nombre: item.msg.nombre, kind: item.msg.kind, size: item.msg.size })"
                             >
                                 <span class="rounded bg-[#579DFF]/25 px-1.5 py-0.5 text-[10px] font-bold uppercase text-[#85B8FF]">
-                                    {{ kindLabel(m.kind) }}
+                                    {{ kindLabel(item.msg.kind) }}
                                 </span>
-                                <span class="min-w-0 flex-1 truncate text-xs">{{ m.nombre }}</span>
-                                <span class="text-[10px] text-[#8B9AAB]">{{ formatSize(m.size) }}</span>
+                                <span class="min-w-0 flex-1 truncate text-xs">{{ item.msg.nombre }}</span>
+                                <span class="text-[10px] text-[#8B9AAB]">{{ formatSize(item.msg.size) }}</span>
                             </button>
                             <p
                                 class="mt-1 text-right text-[10px] tabular-nums"
-                                :class="isMine(m) ? 'text-white/50' : 'text-[#8B9AAB]'"
+                                :class="isMine(item.msg) ? 'text-white/50' : 'text-[#8B9AAB]'"
                             >
-                                {{ msgTime(m.created_at) }}
-                                <span v-if="m.pending"> · enviando</span>
+                                {{ msgTime(item.msg.created_at) }}
+                                <span v-if="item.msg.pending"> · enviando</span>
                             </p>
                         </div>
-                    </div>
+                        </div>
+                    </template>
 
                     <p v-if="!dmChat.mensajes?.length && !dmTypingUsers.length" class="py-16 text-center text-sm text-[#8B9AAB]">
                         Sin mensajes. Escribe el primero…
@@ -1663,6 +1941,13 @@ onUnmounted(() => {
                             class="max-h-24 rounded-[10px] border border-[#2a3340]"
                             alt="Preview"
                         />
+                        <div
+                            v-else-if="dmPendingFile && isAudioFile(dmPendingFile)"
+                            class="rounded-[10px] border border-[#25D366]/40 bg-[#25D366]/10 px-3 py-2 text-xs text-[#57D9A3]"
+                        >
+                            <el-icon class="mr-1 align-middle"><Microphone /></el-icon>
+                            Nota de voz · {{ dmPendingFile.name }}
+                        </div>
                         <span
                             v-else-if="dmPendingFile"
                             class="rounded-[10px] border border-[#2a3340] bg-[#1a222c] px-3 py-2 text-xs text-[#E8EEF4]"
@@ -1681,23 +1966,25 @@ onUnmounted(() => {
                     <div class="flex items-end gap-1.5 rounded-[24px] bg-[#1a222c] px-1.5 py-1 ring-1 ring-[#2a3340]">
                         <label
                             class="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#8B9AAB] transition hover:bg-white/5 hover:text-white"
-                            title="Adjuntar imagen, PDF o Word"
+                            title="Adjuntar imagen, PDF, Word o audio"
                         >
                             <el-icon :size="18"><Paperclip /></el-icon>
                             <input
                                 type="file"
-                                accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,image/*,application/pdf"
+                                accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.webm,.ogg,.mp3,.m4a,.wav,.aac,image/*,application/pdf,audio/*"
                                 class="hidden"
                                 @change="onDmFilePick"
                             />
                         </label>
+
+                        <VoiceRecorder @recorded="onDmVoiceRecorded" />
 
                         <textarea
                             ref="dmComposerRef"
                             v-model="dmComment"
                             rows="1"
                             class="max-h-28 min-h-[36px] flex-1 resize-none bg-transparent py-2 text-sm text-white placeholder:text-[#8B9AAB] focus:outline-none"
-                            placeholder="Mensaje"
+                            placeholder="Mensaje o nota de voz"
                             @paste="onDmPaste"
                             @input="pingDmTyping"
                             @keydown="onDmComposerKeydown"

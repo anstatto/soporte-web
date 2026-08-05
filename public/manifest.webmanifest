@@ -1,0 +1,26 @@
+{
+  "name": "RM Consuegra Soporte",
+  "short_name": "Soporte",
+  "description": "Mensajería interna y tickets — RM Consuegra",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f1419",
+  "theme_color": "#0f1419",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "/images/LogoMono.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/LogoMono.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

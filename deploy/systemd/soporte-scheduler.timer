@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Soporte-web scheduler every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+Unit=soporte-scheduler.service
+
+[Install]
+WantedBy=timers.target

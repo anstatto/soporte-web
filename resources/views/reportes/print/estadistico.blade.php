@@ -1,95 +1,89 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <title>Reporte Estadístico de Soportes</title>
-    <style>
-        /* Estilos básicos en línea */
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { width: 100%; max-width: 1200px; margin: 0 auto; padding: 20px; }
-        h1 { font-size: 24px; margin-bottom: 20px; }
-        h2 { font-size: 20px; margin-top: 30px; margin-bottom: 15px; }
-        h3 { font-size: 18px; margin-top: 25px; margin-bottom: 10px; }
-        ul { padding-left: 20px; }
-        .grid { display: flex; flex-wrap: wrap; }
-        .grid > div { flex: 1; min-width: 300px; margin: 10px; }
-        @media print {
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        }
-    </style>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-</head>
-<body>
-    <div class="container">
-        <h1>Reporte Estadístico de Soportes</h1>
-        <p>Período: {{ $fechaInicio ? $fechaInicio->format('d/m/Y H:i') : 'N/A' }} - {{ $fechaFin ? $fechaFin->format('d/m/Y H:i') : 'N/A' }}</p>
-        @php
-            $totalTickets = $ticketsPorUsuario->flatten()->count();
-            $ticketsPorEstado = $ticketsPorUsuario->flatten()->groupBy('estado.nombre');
-        @endphp
-        <h2>Resumen General</h2>
-        <p>Total de tickets: {{ $totalTickets }}</p>
-        <h3>Tickets por Estado</h3>
-        <div class="grid">
-            <div>
-                <ul>
-                    @foreach($ticketsPorEstado as $estado => $tickets)
-                        <li>{{ $estado }}: {{ $tickets->count() }} ({{ number_format($tickets->count() / $totalTickets * 100, 2) }}%)</li>
-                    @endforeach
-                </ul>
-            </div>
-            <div>
-                <canvas id="estadisticasChart"></canvas>
+@extends('reportes.print.layout')
+
+@section('title', 'Reporte estadístico de soportes')
+
+@section('content')
+    @php
+        $all = $ticketsPorUsuario->flatten(1);
+        $total = max($all->count(), 1);
+        $porEstado = $all->groupBy(fn ($t) => $t->estado?->nombre ?? 'Sin estado');
+        $porPrioridad = $all->groupBy(fn ($t) => ucfirst($t->prioridad ?? 'media'));
+        $porDepto = $all->groupBy(fn ($t) => $t->departamento?->nombre ?? 'Sin departamento');
+        $colors = ['#2F6FAD', '#1E4E79', '#3D7A5F', '#B7791F', '#C4554D', '#5B6B7C', '#6B5B7A', '#3D6B8A'];
+    @endphp
+
+    <div class="kpi-row">
+        <div class="kpi">
+            <div class="label">Total</div>
+            <div class="value">{{ $all->count() }}</div>
+        </div>
+        <div class="kpi">
+            <div class="label">Estados</div>
+            <div class="value">{{ $porEstado->count() }}</div>
+        </div>
+        <div class="kpi">
+            <div class="label">Departamentos</div>
+            <div class="value">{{ $porDepto->count() }}</div>
+        </div>
+        <div class="kpi">
+            <div class="label">Usuarios</div>
+            <div class="value">{{ $ticketsPorUsuario->count() }}</div>
+        </div>
+    </div>
+
+    <h2>Distribución por estado</h2>
+    @foreach($porEstado as $nombre => $group)
+        @php $pct = ($group->count() / $total) * 100; @endphp
+        <div class="bar-wrap">
+            <div class="bar-label">{{ $nombre }} — {{ $group->count() }} ({{ number_format($pct, 1) }}%)</div>
+            <div class="bar-track">
+                <div class="bar-fill" style="width: {{ min(100, $pct) }}%; background: {{ $colors[$loop->index % count($colors)] }};"></div>
             </div>
         </div>
-        <h2>Desglose por Usuario</h2>
-        @foreach($ticketsPorUsuario as $userId => $tickets)
-            <div>
-                <h3>{{ $tickets->first()->user->name }}</h3>
-                <p>Total de tickets: {{ $tickets->count() }}</p>
-                @php
-                    $ticketsUsuarioPorEstado = $tickets->groupBy('estado.nombre');
-                @endphp
-                <ul>
-                    @foreach($ticketsUsuarioPorEstado as $estado => $ticketsEstado)
-                        <li>{{ $estado }}: {{ $ticketsEstado->count() }} ({{ number_format($ticketsEstado->count() / $tickets->count() * 100, 2) }}%)</li>
-                    @endforeach
-                </ul>
+    @endforeach
+
+    <h2>Distribución por prioridad</h2>
+    @foreach($porPrioridad as $nombre => $group)
+        @php $pct = ($group->count() / $total) * 100; @endphp
+        <div class="bar-wrap">
+            <div class="bar-label">{{ $nombre }} — {{ $group->count() }} ({{ number_format($pct, 1) }}%)</div>
+            <div class="bar-track">
+                <div class="bar-fill" style="width: {{ min(100, $pct) }}%; background: {{ $colors[($loop->index + 2) % count($colors)] }};"></div>
             </div>
-        @endforeach
-    </div>
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const ctx = document.getElementById('estadisticasChart').getContext('2d');
-            new Chart(ctx, {
-                type: 'pie',
-                data: {
-                    labels: {!! json_encode($ticketsPorEstado->keys()) !!},
-                    datasets: [{
-                        data: {!! json_encode($ticketsPorEstado->map->count()->values()) !!},
-                        backgroundColor: [
-                            'rgba(255, 99, 132, 0.8)',
-                            'rgba(54, 162, 235, 0.8)',
-                            'rgba(255, 206, 86, 0.8)',
-                            'rgba(75, 192, 192, 0.8)',
-                            'rgba(153, 102, 255, 0.8)',
-                        ],
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            position: 'top',
-                        },
-                        title: {
-                            display: true,
-                            text: 'Distribución de Tickets por Estado'
-                        }
-                    }
-                }
-            });
-        });
-    </script>
-</body>
-</html>
+        </div>
+    @endforeach
+
+    <h2>Por departamento</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Departamento</th>
+                <th style="width:20%">Cantidad</th>
+                <th style="width:20%">%</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach($porDepto as $nombre => $group)
+                <tr>
+                    <td>{{ $nombre }}</td>
+                    <td>{{ $group->count() }}</td>
+                    <td>{{ number_format(($group->count() / $total) * 100, 1) }}%</td>
+                </tr>
+            @endforeach
+        </tbody>
+    </table>
+
+    <h2>Desglose por usuario</h2>
+    @forelse($ticketsPorUsuario as $userId => $tickets)
+        <div class="section">
+            <h3>{{ $tickets->first()->user?->name ?? 'Sin usuario' }} — {{ $tickets->count() }} ticket(s)</h3>
+            <ul>
+                @foreach($tickets->groupBy(fn ($t) => $t->estado?->nombre ?? 'Sin estado') as $estado => $group)
+                    <li>{{ $estado }}: {{ $group->count() }} ({{ number_format(($group->count() / max($tickets->count(), 1)) * 100, 1) }}%)</li>
+                @endforeach
+            </ul>
+        </div>
+    @empty
+        <p class="muted">No hay tickets en el período seleccionado.</p>
+    @endforelse
+@endsection

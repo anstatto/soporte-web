@@ -65,6 +65,8 @@ class ChatStateController extends Controller
             $conv?->users()->updateExistingPivot($user->id, ['last_read_at' => now()]);
         }
 
+        \App\Support\ChatInbox::forgetUnreadCache($user);
+
         return response()->json([
             'ok' => true,
             'meta' => $state->toMeta(),

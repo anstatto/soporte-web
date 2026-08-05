@@ -20,19 +20,34 @@ class HomeController extends Controller
     {
         $user = Auth::user();
 
-        // Solicitante entra al portal (chat + reportar); soporte al tablero
+        // Solicitante entra al portal; soporte/admin ven el panel de resumen
         if ($user->hasRole('solicitante') && ! $user->hasRole(['admin', 'soporte'])) {
             return redirect()->route('portal');
         }
 
-        if ($user->can('view tickets')) {
-            return redirect()->route('tickets.board');
+        return $this->dashboard();
+    }
+
+    public function dashboard()
+    {
+        $user = Auth::user();
+
+        if ($user->hasRole('solicitante') && ! $user->hasRole(['admin', 'soporte'])) {
+            return redirect()->route('portal');
         }
+
+        abort_unless(
+            $user->can('dashboard resumen') || $user->can('view tickets') || $user->can('view reports'),
+            403
+        );
 
         $isSoporte = $user->esSoporte();
 
         $scoped = function () use ($user, $isSoporte) {
             $q = Ticket::query();
+            if ($user->current_workspace_id) {
+                $q->where('workspace_id', $user->current_workspace_id);
+            }
             if (! $isSoporte) {
                 $q->where(function ($qq) use ($user) {
                     $qq->where('user_id', $user->id)

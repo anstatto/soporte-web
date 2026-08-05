@@ -157,12 +157,73 @@ html.dark {
 
     .chat-bubble--mine {
         border-radius: 12px 12px 4px 12px;
-        background-color: #1a4d3e;
+        background-color: #1e6b52;
+        border: 1px solid rgba(87, 217, 163, 0.35);
     }
 
     .chat-bubble--theirs {
         border-radius: 12px 12px 12px 4px;
-        background-color: #1f2c34;
+        background-color: #243447;
+        border: 1px solid rgba(135, 162, 190, 0.28);
+    }
+
+    /* Fila de inbox sin leer: barra + fondo más visibles */
+    .inbox-row--unread {
+        background: linear-gradient(90deg, rgba(37, 211, 102, 0.16) 0%, rgba(37, 211, 102, 0.06) 48%, transparent 100%);
+        box-shadow: inset 3px 0 0 #25D366;
+    }
+
+    .inbox-row--active {
+        background: linear-gradient(90deg, rgba(87, 157, 255, 0.22) 0%, rgba(87, 157, 255, 0.08) 55%, transparent 100%);
+        box-shadow: inset 3px 0 0 #579DFF;
+    }
+
+    .inbox-row--unread.inbox-row--active {
+        background: linear-gradient(90deg, rgba(37, 211, 102, 0.2) 0%, rgba(87, 157, 255, 0.12) 50%, transparent 100%);
+        box-shadow: inset 3px 0 0 #25D366;
+    }
+
+    .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        border-radius: 999px;
+        padding: 0.15rem 0.5rem;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        color: #fff;
+        border: 1px solid rgba(255, 255, 255, 0.28);
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+        text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+    }
+
+    .priority-pill {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 0.15rem 0.5rem;
+        font-size: 10px;
+        font-weight: 700;
+        border-width: 1px;
+        border-style: solid;
+    }
+
+    .avatar-ring--unread {
+        box-shadow: 0 0 0 2px #0f1419, 0 0 0 4px #25D366;
+    }
+
+    .notif-row--unread {
+        background: linear-gradient(90deg, rgba(87, 157, 255, 0.18) 0%, rgba(87, 157, 255, 0.06) 60%, transparent 100%);
+        box-shadow: inset 3px 0 0 #579DFF;
+    }
+
+    .unread-divider-pill {
+        background: #25D366;
+        color: #052e16;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        box-shadow: 0 0 12px rgba(37, 211, 102, 0.35);
     }
 
     .typing-bubble {

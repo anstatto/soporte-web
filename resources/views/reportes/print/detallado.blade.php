@@ -1,44 +1,49 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <title>Reporte Detallado de Soportes</title>
-    <link href="https://cdn.tailwindcss.com" rel="stylesheet">
-</head>
-<body class="bg-gray-100 p-6">
-    <h1 class="text-3xl font-bold mb-6">Reporte Detallado de Soportes</h1>
-    @foreach($ticketsPorUsuario as $userId => $tickets)
-        <h2 class="text-2xl font-semibold mb-4">Usuario: {{ $tickets->first()->user->name }}</h2>
-        <div class="overflow-x-auto">
-            <table class="min-w-full bg-white border border-gray-200 mb-6">
-                <thead class="bg-gray-50">
+@extends('reportes.print.layout')
+
+@section('title', 'Reporte detallado de soportes')
+
+@section('content')
+    @forelse($ticketsPorUsuario as $userId => $tickets)
+        <div class="section">
+            <h2>{{ $tickets->first()->user?->name ?? 'Sin usuario' }} ({{ $tickets->count() }})</h2>
+            <table>
+                <thead>
                     <tr>
-                        <th class="px-6 py-3 border-b border-gray-200 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Título</th>
-                        <th class="px-6 py-3 border-b border-gray-200 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descripción</th>
-                        <th class="px-6 py-3 border-b border-gray-200 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Departamento</th>
-                        <th class="px-6 py-3 border-b border-gray-200 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
-                        <th class="px-6 py-3 border-b border-gray-200 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha de Creación</th>
-                        <th class="px-6 py-3 border-b border-gray-200 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Última Actualización</th>
+                        <th style="width:6%">ID</th>
+                        <th style="width:18%">Título</th>
+                        <th>Descripción</th>
+                        <th style="width:12%">Depto.</th>
+                        <th style="width:12%">Estado</th>
+                        <th style="width:10%">Prioridad</th>
+                        <th style="width:12%">Creado</th>
+                        <th style="width:12%">Actualizado</th>
                     </tr>
                 </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
+                <tbody>
                     @foreach($tickets as $ticket)
                         <tr>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $ticket->titulo }}</td>
-                            <td class="px-6 py-4 text-sm text-gray-900">{{ Str::limit($ticket->descripcion, 100) }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $ticket->departamento->nombre }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                <span class="px-2 py-1 text-xs font-semibold rounded-full" style="background-color: {{ $ticket->estado->color }}; color: {{ $ticket->estado->color == '#FFFFFF' ? '#000000' : '#FFFFFF' }};">
-                                    {{ $ticket->estado->nombre }}
-                                </span>
+                            <td>#{{ $ticket->id }}</td>
+                            <td>{{ $ticket->titulo }}</td>
+                            <td>{{ \Illuminate\Support\Str::limit(strip_tags($ticket->descripcion ?? ''), 120) }}</td>
+                            <td>{{ $ticket->departamento?->nombre ?? '—' }}</td>
+                            <td>
+                                @if($ticket->estado)
+                                    <span class="badge" style="background-color: {{ $ticket->estado->color ?? '#5B6B7C' }};">
+                                        {{ $ticket->estado->nombre }}
+                                    </span>
+                                @else
+                                    —
+                                @endif
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $ticket->created_at->format('d/m/Y H:i') }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $ticket->updated_at->format('d/m/Y H:i') }}</td>
+                            <td>{{ ucfirst($ticket->prioridad ?? 'media') }}</td>
+                            <td>{{ optional($ticket->created_at)->format('d/m/Y H:i') }}</td>
+                            <td>{{ optional($ticket->updated_at)->format('d/m/Y H:i') }}</td>
                         </tr>
                     @endforeach
                 </tbody>
             </table>
         </div>
-    @endforeach
-</body>
-</html>
+    @empty
+        <p class="muted">No hay tickets en el período seleccionado.</p>
+    @endforelse
+@endsection

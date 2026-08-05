@@ -181,7 +181,19 @@ const submitAssign = () => {
     </div>
 
     <div class="overflow-hidden rounded-[10px] border border-[#2a3340]">
-        <el-table :data="users.data" class="w-full" empty-text="No hay usuarios con esos filtros">
+        <el-table :data="users.data" class="w-full">
+            <template #empty>
+                <div class="px-6 py-10 text-center">
+                    <el-icon :size="28" class="text-[#8B9AAB]"><User /></el-icon>
+                    <p class="mt-3 font-medium text-[#E8EEF4]">Sin usuarios</p>
+                    <p class="mt-1 text-sm text-[#8B9AAB]">
+                        {{ hasFilters() ? 'No hay resultados con esos filtros.' : 'Crea el primer usuario del sistema.' }}
+                    </p>
+                    <el-button v-if="canManage && !hasFilters()" class="mt-4" type="primary" @click="openCreate">
+                        Nuevo usuario
+                    </el-button>
+                </div>
+            </template>
             <el-table-column label="Nombre" min-width="220">
                 <template #default="{ row }">
                     <div class="flex items-center gap-3 py-0.5">

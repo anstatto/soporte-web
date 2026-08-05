@@ -9,10 +9,14 @@ use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Inertia\Inertia;
 
 class ReporteController extends Controller
 {
+    /** Estados considerados resueltos para métricas de rendimiento */
+    private const ESTADOS_CERRADOS = ['cerrado', 'resuelto', 'finalizado', 'completado'];
+
     public function index(Request $request)
     {
         abort_unless(auth()->user()->can('view reports'), 403);
@@ -46,58 +50,149 @@ class ReporteController extends Controller
             403
         );
 
+        $request->validate([
+            'fecha_inicio' => 'required|date',
+            'fecha_fin' => 'required|date|after_or_equal:fecha_inicio',
+            'tipo_reporte' => 'nullable|in:basico,detallado,estadistico,rendimiento',
+            'format' => 'nullable|in:pdf,excel,csv',
+            'user_id' => 'nullable|integer|exists:users,id',
+            'estado_id' => 'nullable|integer|exists:estados,id',
+            'preview' => 'nullable|boolean',
+        ]);
+
         $fechaInicio = Carbon::parse($request->input('fecha_inicio'));
         $fechaFin = Carbon::parse($request->input('fecha_fin'));
         $tickets = $this->getFilteredTickets($request, $fechaInicio, $fechaFin);
         $format = $request->input('format', 'pdf');
         $tipoReporte = $request->input('tipo_reporte', 'basico');
+        $preview = $request->boolean('preview');
 
         return match ($format) {
             'excel' => (new TicketsExport($tickets->get(), $tipoReporte))->export('reporte_soportes.xlsx'),
-            'csv' => $this->exportarCSV($tickets->get()),
-            default => $this->generarPDF($tickets, $tipoReporte, $fechaInicio, $fechaFin),
+            'csv' => $this->exportarCSV($tickets->get(), $tipoReporte),
+            default => $this->generarPDF($tickets, $tipoReporte, $fechaInicio, $fechaFin, $preview),
         };
     }
 
-    private function exportarCSV($tickets)
+    private function exportarCSV(Collection $tickets, string $tipoReporte)
     {
+        $filename = "reporte_{$tipoReporte}_".now()->format('Ymd_His').'.csv';
         $headers = [
-            'Content-type' => 'text/csv',
-            'Content-Disposition' => 'attachment; filename=reporte_soportes.csv',
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
             'Pragma' => 'no-cache',
             'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
             'Expires' => '0',
         ];
 
-        $callback = function () use ($tickets) {
+        $callback = function () use ($tickets, $tipoReporte) {
             $file = fopen('php://output', 'w');
-            fputcsv($file, ['ID', 'Título', 'Usuario', 'Departamento', 'Estado', 'Fecha']);
+            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
 
-            foreach ($tickets as $ticket) {
-                fputcsv($file, [
-                    $ticket->id,
-                    $ticket->titulo,
-                    $ticket->user?->name,
-                    $ticket->departamento?->nombre,
-                    $ticket->estado?->nombre,
-                    optional($ticket->created_at)->format('Y-m-d H:i:s'),
-                ]);
+            if ($tipoReporte === 'estadistico') {
+                fputcsv($file, ['Estado', 'Cantidad', 'Porcentaje'], ';');
+                $total = max($tickets->count(), 1);
+                foreach ($tickets->groupBy(fn ($t) => $t->estado?->nombre ?? 'Sin estado') as $estado => $group) {
+                    fputcsv($file, [
+                        $estado,
+                        $group->count(),
+                        number_format(($group->count() / $total) * 100, 2).'%',
+                    ], ';');
+                }
+            } elseif ($tipoReporte === 'rendimiento') {
+                $enriched = $this->enrichTickets($tickets);
+                fputcsv($file, ['ID', 'Título', 'Usuario', 'Prioridad', 'Estado', 'Horas resolución', 'Creado', 'Actualizado'], ';');
+                foreach ($enriched as $ticket) {
+                    fputcsv($file, [
+                        $ticket->id,
+                        $ticket->titulo,
+                        $ticket->user?->name,
+                        $ticket->prioridad,
+                        $ticket->estado?->nombre,
+                        $ticket->tiempo_resolucion_horas !== null
+                            ? number_format($ticket->tiempo_resolucion_horas, 2)
+                            : '',
+                        optional($ticket->created_at)->format('Y-m-d H:i:s'),
+                        optional($ticket->updated_at)->format('Y-m-d H:i:s'),
+                    ], ';');
+                }
+            } elseif ($tipoReporte === 'detallado') {
+                fputcsv($file, ['ID', 'Título', 'Descripción', 'Usuario', 'Departamento', 'Estado', 'Prioridad', 'Creado', 'Actualizado'], ';');
+                foreach ($tickets as $ticket) {
+                    fputcsv($file, [
+                        $ticket->id,
+                        $ticket->titulo,
+                        strip_tags($ticket->descripcion ?? ''),
+                        $ticket->user?->name,
+                        $ticket->departamento?->nombre,
+                        $ticket->estado?->nombre,
+                        $ticket->prioridad,
+                        optional($ticket->created_at)->format('Y-m-d H:i:s'),
+                        optional($ticket->updated_at)->format('Y-m-d H:i:s'),
+                    ], ';');
+                }
+            } else {
+                fputcsv($file, ['ID', 'Título', 'Usuario', 'Departamento', 'Estado', 'Prioridad', 'Fecha'], ';');
+                foreach ($tickets as $ticket) {
+                    fputcsv($file, [
+                        $ticket->id,
+                        $ticket->titulo,
+                        $ticket->user?->name,
+                        $ticket->departamento?->nombre,
+                        $ticket->estado?->nombre,
+                        $ticket->prioridad,
+                        optional($ticket->created_at)->format('Y-m-d H:i:s'),
+                    ], ';');
+                }
             }
+
             fclose($file);
         };
 
         return response()->stream($callback, 200, $headers);
     }
 
-    private function generarPDF($tickets, $tipoReporte, $fechaInicio, $fechaFin)
+    private function generarPDF($ticketsQuery, string $tipoReporte, Carbon $fechaInicio, Carbon $fechaFin, bool $preview = false)
     {
-        $ticketsPorUsuario = $tickets->get()->groupBy('user_id');
-        $pdf = PDF::loadView("reportes.print.{$tipoReporte}", compact('ticketsPorUsuario', 'fechaInicio', 'fechaFin'));
+        $collection = $this->enrichTickets($ticketsQuery->get());
+        $ticketsPorUsuario = $collection->groupBy('user_id');
 
-        return $pdf->download('reporte_soportes.pdf');
+        $pdf = Pdf::loadView("reportes.print.{$tipoReporte}", [
+            'ticketsPorUsuario' => $ticketsPorUsuario,
+            'fechaInicio' => $fechaInicio,
+            'fechaFin' => $fechaFin,
+            'appName' => config('app.name', 'Soporte'),
+            'reportFooter' => \App\Models\Setting::get('report_footer'),
+        ])->setPaper('a4', 'portrait');
+
+        $filename = 'reporte_'.$tipoReporte.'_'.now()->format('Ymd_His').'.pdf';
+
+        if ($preview) {
+            return $pdf->stream($filename);
+        }
+
+        return $pdf->download($filename);
     }
 
-    private function getFilteredTickets($request, $fechaInicio, $fechaFin)
+    private function enrichTickets(Collection $tickets): Collection
+    {
+        return $tickets->map(function (Ticket $ticket) {
+            $nombre = mb_strtolower(trim($ticket->estado?->nombre ?? ''));
+            $esCerrado = in_array($nombre, self::ESTADOS_CERRADOS, true);
+
+            $ticket->tiempo_resolucion_horas = null;
+            if ($esCerrado && $ticket->created_at && $ticket->updated_at) {
+                $ticket->tiempo_resolucion_horas = round(
+                    $ticket->created_at->diffInMinutes($ticket->updated_at) / 60,
+                    2
+                );
+            }
+
+            return $ticket;
+        });
+    }
+
+    private function getFilteredTickets(Request $request, Carbon $fechaInicio, Carbon $fechaFin)
     {
         $user = auth()->user();
 
@@ -109,13 +204,13 @@ class ReporteController extends Controller
             ->latest();
     }
 
-    private function getTiposReporte()
+    private function getTiposReporte(): array
     {
         return [
-            'basico' => 'Reporte Básico',
-            'detallado' => 'Reporte Detallado',
-            'estadistico' => 'Reporte Estadístico',
-            'rendimiento' => 'Reporte de Rendimiento',
+            'basico' => 'Reporte básico',
+            'detallado' => 'Reporte detallado',
+            'estadistico' => 'Reporte estadístico',
+            'rendimiento' => 'Reporte de rendimiento',
         ];
     }
 }

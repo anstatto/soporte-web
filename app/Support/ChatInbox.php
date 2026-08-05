@@ -177,6 +177,7 @@ class ChatInbox
     public static function markTicketRead(User $user, int $ticketId): void
     {
         ChatState::for($user, ChatState::TYPE_TICKET, $ticketId)->markRead();
+        self::forgetUnreadCache($user);
     }
 
     public static function markDmRead(User $user, int $conversacionId): void
@@ -185,5 +186,76 @@ class ChatInbox
         Conversacion::find($conversacionId)
             ?->users()
             ->updateExistingPivot($user->id, ['last_read_at' => now()]);
+        self::forgetUnreadCache($user);
+    }
+
+    public static function forgetUnreadCache(User $user): void
+    {
+        \Illuminate\Support\Facades\Cache::forget('unread_chats.'.$user->id);
+    }
+
+    /**
+     * Cantidad de chats (tickets + DM) con mensajes sin leer.
+     * Cache corto para no pesarlo en cada request Inertia.
+     */
+    public static function unreadChatsCount(User $user): int
+    {
+        return (int) \Illuminate\Support\Facades\Cache::remember(
+            'unread_chats.'.$user->id,
+            20,
+            function () use ($user) {
+                $base = Ticket::query()
+                    ->when($user->current_workspace_id, fn ($q) => $q->where('workspace_id', $user->current_workspace_id))
+                    ->when(! $user->esSoporte(), function ($q) use ($user) {
+                        $q->where(function ($qq) use ($user) {
+                            $qq->where('user_id', $user->id)
+                                ->orWhereHas('users', fn ($u) => $u->where('users.id', $user->id));
+                        });
+                    });
+
+                $recentIds = (clone $base)
+                    ->whereHas('comentarios')
+                    ->withMax('comentarios', 'created_at')
+                    ->orderByDesc('comentarios_max_created_at')
+                    ->limit(150)
+                    ->pluck('id')
+                    ->all();
+
+                $markedIds = ChatState::query()
+                    ->where('user_id', $user->id)
+                    ->where('chat_type', ChatState::TYPE_TICKET)
+                    ->where('marked_unread', true)
+                    ->pluck('chat_id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+
+                $ticketIds = array_values(array_unique(array_merge($recentIds, $markedIds)));
+
+                $ticketUnread = 0;
+                if ($ticketIds !== []) {
+                    foreach (self::ticketMetas($user, $ticketIds) as $pack) {
+                        if ((int) ($pack['unread'] ?? 0) > 0) {
+                            $ticketUnread++;
+                        }
+                    }
+                }
+
+                $dmUnread = 0;
+                if ($user->can('chat with users')) {
+                    $dms = Conversacion::query()
+                        ->whereHas('users', fn ($u) => $u->where('users.id', $user->id))
+                        ->with(['users', 'latestMensaje'])
+                        ->limit(100)
+                        ->get();
+                    foreach (self::dmMetas($user, $dms) as $pack) {
+                        if ((int) ($pack['unread'] ?? 0) > 0) {
+                            $dmUnread++;
+                        }
+                    }
+                }
+
+                return $ticketUnread + $dmUnread;
+            }
+        );
     }
 }

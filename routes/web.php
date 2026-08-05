@@ -1,15 +1,19 @@
 <?php
 
+use App\Http\Controllers\CallController;
 use App\Http\Controllers\ChatStateController;
 use App\Http\Controllers\ComentarioController;
 use App\Http\Controllers\ConversacionController;
 use App\Http\Controllers\DepartamentoController;
 use App\Http\Controllers\EstadoController;
+use App\Http\Controllers\EtiquetaController;
 use App\Http\Controllers\HomeController;
+use App\Http\Controllers\LlamadasController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PortalController;
 use App\Http\Controllers\ReporteController;
 use App\Http\Controllers\RoleController;
+use App\Http\Controllers\SettingController;
 use App\Http\Controllers\TicketController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WorkspaceController;
@@ -21,6 +25,7 @@ Auth::routes(['register' => false]);
 
 Route::middleware(['auth'])->group(function () {
     Route::get('/', [HomeController::class, 'index'])->name('home');
+    Route::get('/dashboard', [HomeController::class, 'dashboard'])->name('dashboard');
     Route::get('/portal', [PortalController::class, 'index'])->name('portal');
 
     Route::get('tickets/board', [TicketController::class, 'board'])->name('tickets.board');
@@ -35,6 +40,7 @@ Route::middleware(['auth'])->group(function () {
 
     Route::resource('departamentos', DepartamentoController::class)->except(['create', 'edit', 'show']);
     Route::resource('estados', EstadoController::class)->except(['create', 'edit', 'show']);
+    Route::resource('etiquetas', EtiquetaController::class)->except(['create', 'edit', 'show']);
 
     Route::prefix('reportes')->name('reportes.')->group(function () {
         Route::get('/', [ReporteController::class, 'index'])->name('index');
@@ -53,12 +59,27 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/chats/{conversacion}/typing', [ConversacionController::class, 'typing'])->name('chats.typing');
     Route::post('/chat-state', [ChatStateController::class, 'update'])->name('chat-state.update');
 
+    Route::get('/llamadas', [LlamadasController::class, 'index'])->name('llamadas.index');
+
+    Route::prefix('calls')->name('calls.')->group(function () {
+        Route::get('/status', [CallController::class, 'status'])->name('status');
+        Route::post('/', [CallController::class, 'start'])->name('start');
+        Route::post('{callId}/accept', [CallController::class, 'accept'])->name('accept');
+        Route::post('{callId}/decline', [CallController::class, 'decline'])->name('decline');
+        Route::post('{callId}/end', [CallController::class, 'end'])->name('end');
+        Route::post('{callId}/miss', [CallController::class, 'miss'])->name('miss');
+        Route::get('{callId}/token', [CallController::class, 'token'])->name('token');
+    });
+
     Route::get('/perfil', [UserController::class, 'show'])->name('perfil.show');
     Route::put('/perfil', [UserController::class, 'update'])->name('perfil.update');
 
     Route::post('/workspaces/switch', [WorkspaceController::class, 'switch'])->name('workspaces.switch');
 
     Route::middleware([RoleMiddleware::class.':admin'])->group(function () {
+        Route::get('ajustes', [SettingController::class, 'index'])->name('ajustes.index');
+        Route::put('ajustes', [SettingController::class, 'update'])->name('ajustes.update');
+        Route::post('ajustes/test-mail', [SettingController::class, 'testMail'])->name('ajustes.test-mail');
         Route::post('/users/assign-roles', [UserController::class, 'assignRoles'])->name('users.assignRoles');
         Route::get('roles', [RoleController::class, 'index'])->name('roles.index');
         Route::post('/roles', [RoleController::class, 'store'])->name('roles.store');

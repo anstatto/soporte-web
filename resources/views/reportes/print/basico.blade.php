@@ -1,50 +1,59 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reporte de Soportes</title>
-    <style>
-        @media print {
-            body {
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
-            }
-            /* Aquí puedes agregar más estilos específicos para impresión */
-        }
-        /* Tus estilos normales aquí */
-    </style>
-</head>
-<body class="bg-gray-100 text-gray-800">
-    <div class="container mx-auto p-4">
-        <h1 class="text-3xl font-bold text-center mb-6">Reporte Básico de Soportes</h1>
-        @foreach($ticketsPorUsuario as $userId => $tickets)
-            <h2 class="text-2xl font-semibold mb-4">Usuario: {{ $tickets->first()->user->name }}</h2>
-            <div class="overflow-x-auto shadow-md rounded-lg">
-                <table class="min-w-full bg-white">
-                    <thead class="bg-gray-50 text-gray-600 uppercase text-sm">
+@extends('reportes.print.layout')
+
+@section('title', 'Reporte básico de soportes')
+
+@section('content')
+    @php
+        $all = $ticketsPorUsuario->flatten(1);
+        $total = $all->count();
+    @endphp
+
+    <div class="kpi-row">
+        <div class="kpi">
+            <div class="label">Total tickets</div>
+            <div class="value">{{ $total }}</div>
+        </div>
+        <div class="kpi">
+            <div class="label">Usuarios</div>
+            <div class="value">{{ $ticketsPorUsuario->count() }}</div>
+        </div>
+    </div>
+
+    @forelse($ticketsPorUsuario as $userId => $tickets)
+        <div class="section">
+            <h2>{{ $tickets->first()->user?->name ?? 'Sin usuario' }} ({{ $tickets->count() }})</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:8%">ID</th>
+                        <th>Título</th>
+                        <th style="width:18%">Estado</th>
+                        <th style="width:14%">Prioridad</th>
+                        <th style="width:16%">Fecha</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($tickets as $ticket)
                         <tr>
-                            <th class="py-3 px-6 text-left">Título</th>
-                            <th class="py-3 px-6 text-left">Estado</th>
-                            <th class="py-3 px-6 text-left">Fecha de Creación</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-200">
-                        @foreach($tickets as $ticket)
-                            <tr class="hover:bg-gray-50">
-                                <td class="py-4 px-6">{{ $ticket->titulo }}</td>
-                                <td class="py-4 px-6">
-                                    <span class="px-2 py-1 text-xs font-semibold rounded-full" style="background-color: {{ $ticket->estado->color }}; color: {{ $ticket->estado->color == '#FFFFFF' ? '#000000' : '#FFFFFF' }};">
+                            <td>#{{ $ticket->id }}</td>
+                            <td>{{ $ticket->titulo }}</td>
+                            <td>
+                                @if($ticket->estado)
+                                    <span class="badge" style="background-color: {{ $ticket->estado->color ?? '#5B6B7C' }};">
                                         {{ $ticket->estado->nombre }}
                                     </span>
-                                </td>
-                                <td class="py-4 px-6">{{ $ticket->created_at->format('d/m/Y') }}</td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
-        @endforeach
-    </div>
-</body>
-</html>
+                                @else
+                                    —
+                                @endif
+                            </td>
+                            <td>{{ ucfirst($ticket->prioridad ?? 'media') }}</td>
+                            <td>{{ optional($ticket->created_at)->format('d/m/Y H:i') }}</td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    @empty
+        <p class="muted">No hay tickets en el período seleccionado.</p>
+    @endforelse
+@endsection

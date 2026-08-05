@@ -1,0 +1,10 @@
+[Unit]
+Description=Soporte-web Laravel scheduler
+After=network.target
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/soporte-web
+ExecStart=/usr/bin/php /var/www/soporte-web/artisan schedule:run --verbose --no-interaction

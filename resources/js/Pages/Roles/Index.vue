@@ -18,14 +18,15 @@ const form = useForm({
 });
 
 const permissionGroups = computed(() => {
-    const order = ['Tickets', 'Estados', 'Departamentos', 'Reportes', 'Usuarios', 'Dashboard', 'Otros'];
+    const order = ['Tickets', 'Llamadas', 'Estados', 'Departamentos', 'Reportes', 'Usuarios', 'Dashboard', 'Otros'];
     const buckets = Object.fromEntries(order.map((k) => [k, []]));
 
     for (const p of props.permissions || []) {
         let g = 'Otros';
-        if (p.includes('ticket')) g = 'Tickets';
+        if (p.includes('call')) g = 'Llamadas';
+        else if (p.includes('ticket') || p.includes('chat') || p.includes('comment')) g = 'Tickets';
         else if (p.includes('estado')) g = 'Estados';
-        else if (p.includes('departamento')) g = 'Departamentos';
+        else if (p.includes('departamento') || p.includes('etiqueta')) g = 'Departamentos';
         else if (p.includes('report')) g = 'Reportes';
         else if (p.includes('user')) g = 'Usuarios';
         else if (p.includes('dashboard')) g = 'Dashboard';

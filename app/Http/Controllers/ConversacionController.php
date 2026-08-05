@@ -60,7 +60,7 @@ class ConversacionController extends Controller
 
         $request->validate([
             'contenido' => 'nullable|string|max:5000',
-            'archivo' => 'nullable|file|max:10240|mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx',
+            'archivo' => 'nullable|file|max:15360|mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx,webm,ogg,mp3,m4a,wav,aac,mpeg,mpga,opus',
         ]);
 
         $contenido = trim((string) $request->input('contenido', ''));
@@ -232,7 +232,13 @@ class ConversacionController extends Controller
                 'last_message' => $last ? [
                     'preview' => $last->contenido
                         ? \Illuminate\Support\Str::limit($last->contenido, 72)
-                        : ($last->kind === 'image' ? '📷 Imagen' : ($last->nombre_original ?: 'Archivo')),
+                        : match ($last->kind) {
+                            'audio' => '🎤 Nota de voz',
+                            'image' => '📷 Imagen',
+                            'pdf' => '📄 PDF',
+                            'word' => '📄 Documento',
+                            default => ($last->nombre_original ?: 'Archivo'),
+                        },
                     'by' => $last->user?->name,
                     'created_at' => $last->created_at?->toIso8601String(),
                 ] : null,

@@ -81,12 +81,17 @@ class TicketController extends Controller
         // Marcar leído antes de calcular badges del listado
         $chatId = (int) $request->input('chat');
         $activeTicketModel = null;
+        $ticketHighlightAfter = null;
+        $ticketHadUnread = false;
         if ($chatId > 0) {
             $candidate = Ticket::find($chatId);
             if ($candidate && $user->can('view', $candidate)) {
                 $wsOk = ! $user->current_workspace_id
                     || (int) $candidate->workspace_id === (int) $user->current_workspace_id;
                 if ($wsOk) {
+                    $prevState = \App\Models\ChatState::for($user, \App\Models\ChatState::TYPE_TICKET, $candidate->id);
+                    $ticketHighlightAfter = $prevState->last_read_at?->toIso8601String();
+                    $ticketHadUnread = ((ChatInbox::ticketMetas($user, [$candidate->id])[$candidate->id]['unread'] ?? 0) > 0);
                     ChatInbox::markTicketRead($user, $candidate->id);
                     $user->unreadNotifications
                         ->filter(fn ($n) => (int) ($n->data['ticket_id'] ?? 0) === $candidate->id)
@@ -99,9 +104,16 @@ class TicketController extends Controller
         $dmController = app(ConversacionController::class);
         $canDm = $user->can('chat with users');
         $dmId = (int) $request->input('dm');
+        $dmHighlightAfter = null;
+        $dmHadUnread = false;
         if ($canDm && $dmId > 0) {
-            $convPreview = \App\Models\Conversacion::find($dmId);
+            $convPreview = \App\Models\Conversacion::with(['users', 'latestMensaje'])->find($dmId);
             if ($convPreview && $user->can('view', $convPreview)) {
+                $prevDm = \App\Models\ChatState::for($user, \App\Models\ChatState::TYPE_DM, $convPreview->id);
+                $pivotRead = $convPreview->users->firstWhere('id', $user->id)?->pivot?->last_read_at;
+                $dmHighlightAfter = $prevDm->last_read_at?->toIso8601String()
+                    ?: ($pivotRead instanceof \Carbon\CarbonInterface ? $pivotRead->toIso8601String() : ($pivotRead ?: null));
+                $dmHadUnread = ((ChatInbox::dmMetas($user, collect([$convPreview]))[$convPreview->id]['unread'] ?? 0) > 0);
                 ChatInbox::markDmRead($user, $convPreview->id);
             }
         }
@@ -117,6 +129,9 @@ class TicketController extends Controller
                 'descripcion' => \Illuminate\Support\Str::limit($t->descripcion, 80),
                 'estado' => $t->estado?->only(['id', 'nombre', 'color']),
                 'departamento' => $t->departamento?->only(['id', 'nombre']),
+                'prioridad' => $t->prioridad,
+                'prioridad_label' => Ticket::PRIORIDADES[$t->prioridad]['label'] ?? ucfirst($t->prioridad ?? 'media'),
+                'prioridad_color' => Ticket::PRIORIDADES[$t->prioridad]['color'] ?? '#5B6B7C',
                 'user' => $t->user?->only(['id', 'name', 'username']),
                 'asignados' => $t->users->map->only(['id', 'name', 'username'])->values(),
                 'sin_asignar' => $t->users->isEmpty(),
@@ -158,6 +173,8 @@ class TicketController extends Controller
                     'canComment' => $user->can('comment', $ticket),
                     'created_at' => $ticket->created_at?->toIso8601String(),
                     'meta' => \App\Models\ChatState::for($user, \App\Models\ChatState::TYPE_TICKET, $ticket->id)->toMeta(),
+                    'highlight_after' => $ticketHighlightAfter,
+                    'had_unread' => $ticketHadUnread,
                 ];
             }
         }
@@ -168,6 +185,8 @@ class TicketController extends Controller
             if ($conv && $user->can('view', $conv)) {
                 $activeDm = $dmController->payload($conv, $user);
                 $activeDm['meta'] = \App\Models\ChatState::for($user, \App\Models\ChatState::TYPE_DM, $conv->id)->toMeta();
+                $activeDm['highlight_after'] = $dmHighlightAfter;
+                $activeDm['had_unread'] = $dmHadUnread;
             }
         }
 
@@ -227,7 +246,7 @@ class TicketController extends Controller
             return [];
         }
 
-        $rows = \App\Models\Comentario::with('user:id,name')
+        $rows = \App\Models\Comentario::with(['user:id,name', 'adjunto'])
             ->whereIn('id', $maxIds->values()->all())
             ->get()
             ->keyBy('ticket_id');
@@ -235,11 +254,21 @@ class TicketController extends Controller
         $out = [];
         foreach ($rows as $ticketId => $c) {
             $preview = trim((string) $c->contenido);
-            if ($preview === '' && $c->imagen) {
-                $preview = '📷 Imagen';
+            if ($preview === '') {
+                $kind = $c->relationLoaded('adjunto') ? $c->adjunto?->kind : null;
+                if (! $kind && $c->imagen) {
+                    $kind = 'image';
+                }
+                $preview = match ($kind) {
+                    'audio' => '🎤 Nota de voz',
+                    'image' => '📷 Imagen',
+                    'pdf' => '📄 PDF',
+                    'word' => '📄 Documento',
+                    default => $c->imagen ? '📷 Imagen' : '—',
+                };
             }
             $out[(int) $ticketId] = [
-                'preview' => \Illuminate\Support\Str::limit($preview ?: '—', 72),
+                'preview' => \Illuminate\Support\Str::limit($preview, 72),
                 'by' => $c->user?->name,
                 'created_at' => $c->created_at?->toIso8601String(),
             ];

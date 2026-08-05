@@ -55,6 +55,13 @@ class TicketAdjunto extends Model
         if (str_starts_with($mime, 'image/') || in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'], true)) {
             return 'image';
         }
+        if (
+            str_starts_with($mime, 'audio/')
+            || $mime === 'video/webm' // MediaRecorder a veces marca audio/webm como video/webm
+            || in_array($ext, ['webm', 'ogg', 'oga', 'mp3', 'm4a', 'wav', 'aac', 'opus', 'mpeg', 'mpga'], true)
+        ) {
+            return 'audio';
+        }
         if ($mime === 'application/pdf' || $ext === 'pdf') {
             return 'pdf';
         }

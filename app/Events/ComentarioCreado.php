@@ -18,7 +18,7 @@ class ComentarioCreado implements ShouldBroadcastNow
         public Ticket $ticket,
         public Comentario $comentario,
     ) {
-        $this->comentario->loadMissing('user:id,name,username');
+        $this->comentario->loadMissing(['user:id,name,username', 'adjunto']);
     }
 
     public function broadcastOn(): array
@@ -41,6 +41,7 @@ class ComentarioCreado implements ShouldBroadcastNow
                 'contenido' => $this->comentario->contenido,
                 'imagen' => $this->comentario->imagen,
                 'imagen_url' => $this->comentario->imagen_url,
+                'adjunto' => $this->comentario->adjunto?->toPayload(),
                 'user' => $this->comentario->user,
                 'user_id' => $this->comentario->user_id,
                 'created_at' => $this->comentario->created_at?->toIso8601String(),

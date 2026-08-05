@@ -1,0 +1,15 @@
+[Unit]
+Description=Soporte-web Laravel Reverb (WebSockets)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+Restart=always
+RestartSec=5
+WorkingDirectory=/var/www/soporte-web
+ExecStart=/usr/bin/php /var/www/soporte-web/artisan reverb:start --host=127.0.0.1 --port=8080
+
+[Install]
+WantedBy=multi-user.target

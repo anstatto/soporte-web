@@ -7,27 +7,183 @@ import axios from 'axios';
 import { usePermissions } from '@/Composables/usePermissions';
 import { timeAgo } from '@/Composables/useDate';
 import CreateTicketModal from '@/Components/Tickets/CreateTicketModal.vue';
+import CallOverlay from '@/Components/Call/CallOverlay.vue';
+import { createCallRingtone } from '@/Composables/createCallRingtone';
 import 'vue-sonner/style.css';
 
 const page = usePage();
 const { can, isAdmin, isSoporte, user } = usePermissions();
 const isEndUser = computed(() => !isSoporte.value);
 
+const livekitEnabled = computed(() => !!page.props.livekit?.enabled);
+const ringTimeoutMs = computed(() => (Number(page.props.livekit?.ring_timeout) || 45) * 1000);
+
+const callPhase = ref('idle');
+const callData = ref(null);
+const callToken = ref(null);
+const callMuted = ref(false);
+const callCameraOff = ref(true);
+const callStarting = ref(false);
+
+const ringtone = createCallRingtone();
+let ringTimeoutId = null;
+let savedDocTitle = null;
+
+const callHeaders = () => ({
+    'X-CSRF-TOKEN': page.props.csrf_token,
+    Accept: 'application/json',
+    'X-Requested-With': 'XMLHttpRequest',
+});
+
+const clearRingTimers = () => {
+    if (ringTimeoutId) {
+        clearTimeout(ringTimeoutId);
+        ringTimeoutId = null;
+    }
+    ringtone.stop();
+    if (savedDocTitle !== null) {
+        document.title = savedDocTitle;
+        savedDocTitle = null;
+    }
+};
+
+const armRingTimeout = () => {
+    clearTimeout(ringTimeoutId);
+    ringTimeoutId = setTimeout(() => {
+        missCall('Sin respuesta');
+    }, ringTimeoutMs.value);
+};
+
+const resetCall = () => {
+    clearRingTimers();
+    callPhase.value = 'idle';
+    callData.value = null;
+    callToken.value = null;
+    callMuted.value = false;
+    callCameraOff.value = true;
+    callStarting.value = false;
+};
+
+const startCall = async ({ calleeId, video = false, context = null }) => {
+    if (!livekitEnabled.value) {
+        toast.error('Llamadas no configuradas. Activa LiveKit Cloud en .env');
+        return;
+    }
+    if (callPhase.value !== 'idle' || callStarting.value) {
+        toast.message('Ya hay una llamada en curso');
+        return;
+    }
+    callStarting.value = true;
+    try {
+        const { data } = await axios.post(
+            '/calls',
+            { callee_id: calleeId, video, context },
+            { headers: callHeaders() },
+        );
+        callData.value = data.call;
+        callToken.value = data.token;
+        callPhase.value = 'outgoing';
+        callCameraOff.value = !data.call?.video;
+        callMuted.value = false;
+        ringtone.start('outgoing');
+        armRingTimeout();
+    } catch (e) {
+        toast.error(e?.response?.data?.message || 'No se pudo iniciar la llamada');
+    } finally {
+        callStarting.value = false;
+    }
+};
+
+const acceptCall = async () => {
+    if (!callData.value?.id) return;
+    clearRingTimers();
+    try {
+        const { data } = await axios.post(`/calls/${callData.value.id}/accept`, {}, { headers: callHeaders() });
+        callData.value = data.call;
+        callToken.value = data.token;
+        callPhase.value = 'active';
+        callCameraOff.value = !data.call?.video;
+    } catch (e) {
+        toast.error(e?.response?.data?.message || 'No se pudo aceptar');
+        resetCall();
+    }
+};
+
+const declineCall = async () => {
+    clearRingTimers();
+    if (callData.value?.id) {
+        try {
+            await axios.post(`/calls/${callData.value.id}/decline`, {}, { headers: callHeaders() });
+        } catch {
+            /* ignore */
+        }
+    }
+    resetCall();
+};
+
+const endCall = async () => {
+    clearRingTimers();
+    if (callData.value?.id) {
+        try {
+            await axios.post(`/calls/${callData.value.id}/end`, {}, { headers: callHeaders() });
+        } catch {
+            /* ignore */
+        }
+    }
+    resetCall();
+};
+
+const missCall = async (toastMsg = 'Llamada perdida') => {
+    const id = callData.value?.id;
+    const phase = callPhase.value;
+    clearRingTimers();
+    if (id && (phase === 'outgoing' || phase === 'incoming')) {
+        try {
+            await axios.post(`/calls/${id}/miss`, {}, { headers: callHeaders() });
+        } catch {
+            try {
+                await axios.post(`/calls/${id}/end`, {}, { headers: callHeaders() });
+            } catch {
+                /* ignore */
+            }
+        }
+        toast.message(toastMsg);
+    }
+    resetCall();
+};
+
+const onCallFailed = () => {
+    toast.error('Error de conexión de media');
+    endCall();
+};
+
 const navItems = computed(() => {
     if (isEndUser.value) {
         return [
             { label: 'Portal', href: '/portal', icon: 'House', match: 'portal', show: can('view tickets') },
             { label: 'Mis chats', href: '/tickets', icon: 'ChatDotRound', match: 'inbox', show: can('view tickets') },
+            { label: 'Llamadas', href: '/llamadas', icon: 'Phone', match: 'calls', show: can('use calls') },
             { label: 'Notificaciones', href: '/notificaciones', icon: 'Bell', match: 'notifs', show: true },
         ].filter((i) => i.show);
     }
     return [
+        { label: 'Inicio', href: '/dashboard', icon: 'Odometer', match: 'home', show: can('dashboard resumen') || can('view tickets') },
         { label: 'Portal', href: '/portal', icon: 'House', match: 'portal', show: can('view tickets') },
         { label: 'Tablero', href: '/tickets/board', icon: 'Grid', match: 'board', show: can('view tickets') },
         { label: 'Bandeja', href: '/tickets', icon: 'Message', match: 'inbox', show: can('view tickets') },
         { label: 'Notificaciones', href: '/notificaciones', icon: 'Bell', match: 'notifs', show: true },
+        { label: 'Llamadas', href: '/llamadas', icon: 'Phone', match: 'calls', show: can('use calls') || isAdmin.value },
         { label: 'Reportes', href: '/reportes', icon: 'DataAnalysis', match: 'reports', show: can('view reports') },
     ].filter((i) => i.show);
+});
+
+/** Ítems compactos para la nav flotante móvil (máx. 5) */
+const mobileNavItems = computed(() => {
+    const priority = isEndUser.value
+        ? ['portal', 'inbox', 'calls', 'notifs']
+        : ['home', 'board', 'inbox', 'calls', 'notifs'];
+    const byMatch = Object.fromEntries(navItems.value.map((i) => [i.match, i]));
+    return priority.map((m) => byMatch[m]).filter(Boolean).slice(0, 5);
 });
 
 const configItems = computed(() => {
@@ -39,7 +195,9 @@ const configItems = computed(() => {
         { label: 'Áreas de trabajo', href: '/workspaces', icon: 'OfficeBuilding', show: isAdmin.value },
         { label: 'Departamentos', href: '/departamentos', icon: 'Folder', show: can('view departamento') && isAdmin.value },
         { label: 'Estados', href: '/estados', icon: 'CollectionTag', show: can('view estado') && isAdmin.value },
+        { label: 'Etiquetas', href: '/etiquetas', icon: 'PriceTag', show: can('view etiqueta') && isAdmin.value },
         { label: 'Roles', href: '/roles', icon: 'Key', show: isAdmin.value },
+        { label: 'Ajustes', href: '/ajustes', icon: 'Tools', show: isAdmin.value },
         { label: 'Perfil', href: '/perfil', icon: 'Avatar', show: true },
     ].filter((i) => i.show);
 });
@@ -51,6 +209,7 @@ const hasConfigSubmenu = computed(() => !isEndUser.value && configItems.value.le
 const notificationsOpen = ref(false);
 const notifications = ref([]);
 const unreadCount = ref(page.props.unreadNotificationsCount || 0);
+const unreadChatsCount = ref(page.props.unreadChatsCount || 0);
 const notifsReady = ref(false);
 const realtimeNotifs = ref(false);
 const notifRef = ref(null);
@@ -66,6 +225,17 @@ onClickOutside(notifRef, () => { notificationsOpen.value = false; });
 
 provide('appNotifications', notifications);
 provide('appUnreadCount', unreadCount);
+provide('appUnreadChatsCount', unreadChatsCount);
+provide('appCall', {
+    enabled: livekitEnabled,
+    start: startCall,
+    phase: callPhase,
+});
+
+watch(
+    () => page.props.unreadChatsCount,
+    (v) => { if (typeof v === 'number') unreadChatsCount.value = v; },
+);
 
 const toggleConfigMenu = () => {
     if (isEndUser.value) {
@@ -84,6 +254,23 @@ const roleLabel = computed(() => {
     if (isSoporte.value) return 'Soporte';
     return 'Solicitante';
 });
+
+const isViewingTicket = (ticketId) => {
+    if (!ticketId) return false;
+    const id = String(ticketId);
+    try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('chat') === id || params.get('card') === id) return true;
+    } catch { /* */ }
+    const url = page.url || '';
+    return url.includes(`chat=${id}`) || url.includes(`card=${id}`);
+};
+
+/** Tipos “fuertes” (sí suenan). Los mensajes de chat son más suaves / silenciosos si ya estás en el hilo. */
+const isLoudNotification = (type) => {
+    const t = String(type || '');
+    return ['ticket_assigned', 'ticket_mentioned', 'ticket_created', 'ticket_moved'].some((x) => t.includes(x));
+};
 
 const pushRealtimeNotification = (payload) => {
     const data = {
@@ -106,33 +293,75 @@ const pushRealtimeNotification = (payload) => {
         read_at: null,
     };
     if (notifications.value.some((n) => n.id === item.id)) return;
+
+    // Ya estás viendo ese chat: marcar leído en silencio (sin toast ni sonido)
+    if (isViewingTicket(data.ticket_id)) {
+        axios.post(`/notifications/${item.id}/mark-as-read`).catch(() => {});
+        axios.post('/notifications/mark-ticket-read', { ticket_id: data.ticket_id }).catch(() => {});
+        return;
+    }
+
     notifications.value = [item, ...notifications.value];
     unreadCount.value += 1;
-    playNotifSound();
-    toast.message(data.message || data.ticket_title || 'Nueva notificación', {
-        description: data.excerpt || data.ticket_title,
-        action: data.ticket_id
-            ? { label: 'Abrir', onClick: () => viewNotification(item) }
-            : undefined,
-    });
+
+    const loud = isLoudNotification(data.type);
+    if (loud) {
+        playNotifSound({ volume: 0.45 });
+        toast.message(data.message || data.ticket_title || 'Nueva notificación', {
+            description: data.excerpt || data.ticket_title,
+            action: data.ticket_id
+                ? { label: 'Abrir', onClick: () => viewNotification(item) }
+                : undefined,
+        });
+    } else {
+        // Mensaje de chat: solo badge + toast discreto (sin sonido alto)
+        playNotifSound({ volume: 0.12, soft: true });
+        toast.message(data.message || 'Nuevo mensaje', {
+            description: data.ticket_title || data.excerpt,
+            duration: 2500,
+            action: data.ticket_id
+                ? { label: 'Abrir', onClick: () => viewNotification(item) }
+                : undefined,
+        });
+    }
 };
 
-const playNotifSound = () => {
+const playNotifSound = ({ volume = 0.45, soft = false } = {}) => {
     try {
         const Ctx = window.AudioContext || window.webkitAudioContext;
         if (!Ctx) return;
         const ctx = new Ctx();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = 880;
-        gain.gain.value = 0.04;
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start();
-        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
-        osc.stop(ctx.currentTime + 0.2);
-        setTimeout(() => ctx.close(), 300);
+        if (ctx.state === 'suspended') ctx.resume();
+
+        const now = ctx.currentTime;
+        const master = ctx.createGain();
+        const peak = Math.max(0.04, Math.min(0.5, volume));
+        master.gain.setValueAtTime(0.001, now);
+        master.gain.exponentialRampToValueAtTime(peak, now + 0.02);
+        master.gain.exponentialRampToValueAtTime(0.001, now + (soft ? 0.22 : 0.55));
+        master.connect(ctx.destination);
+
+        const tones = soft
+            ? [{ freq: 740, start: 0, dur: 0.12 }]
+            : [
+                { freq: 880, start: 0, dur: 0.16 },
+                { freq: 1174.7, start: 0.14, dur: 0.28 },
+            ];
+        for (const t of tones) {
+            const osc = ctx.createOscillator();
+            const g = ctx.createGain();
+            osc.type = soft ? 'sine' : 'triangle';
+            osc.frequency.value = t.freq;
+            g.gain.setValueAtTime(0.001, now + t.start);
+            g.gain.exponentialRampToValueAtTime(0.9, now + t.start + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.001, now + t.start + t.dur);
+            osc.connect(g);
+            g.connect(master);
+            osc.start(now + t.start);
+            osc.stop(now + t.start + t.dur + 0.02);
+        }
+
+        setTimeout(() => ctx.close(), soft ? 400 : 700);
     } catch {
         // autoplay bloqueado hasta interacción
     }
@@ -149,13 +378,21 @@ const fetchNotifications = async () => {
 
         if (notifsReady.value && fresh.length) {
             const newest = fresh[0];
-            if (!realtimeNotifs.value) playNotifSound();
-            toast.message(newest.data?.message || newest.data?.ticket_title || 'Nueva notificación', {
-                description: newest.data?.excerpt || newest.data?.ticket_title,
-                action: newest.data?.ticket_id
-                    ? { label: 'Abrir', onClick: () => viewNotification(newest) }
-                    : undefined,
-            });
+            const ticketId = newest.data?.ticket_id;
+            if (isViewingTicket(ticketId)) {
+                axios.post('/notifications/mark-ticket-read', { ticket_id: ticketId }).catch(() => {});
+            } else if (!realtimeNotifs.value) {
+                const loud = isLoudNotification(newest.data?.type || newest.type);
+                if (loud) playNotifSound({ volume: 0.45 });
+                else playNotifSound({ volume: 0.12, soft: true });
+                toast.message(newest.data?.message || newest.data?.ticket_title || 'Nueva notificación', {
+                    description: newest.data?.excerpt || newest.data?.ticket_title,
+                    duration: loud ? 4000 : 2500,
+                    action: newest.data?.ticket_id
+                        ? { label: 'Abrir', onClick: () => viewNotification(newest) }
+                        : undefined,
+                });
+            }
         }
         notifsReady.value = true;
     } catch { /* */ }
@@ -182,6 +419,44 @@ const subscribeNotifications = () => {
         const channel = window.Echo.private(`App.Models.User.${uid}`);
         channel.notification((n) => {
             pushRealtimeNotification(n);
+        });
+        channel.listen('.call.incoming', (payload) => {
+            if (callPhase.value !== 'idle') return;
+            const call = payload?.call;
+            if (!call) return;
+            callData.value = call;
+            callToken.value = null;
+            callPhase.value = 'incoming';
+            callCameraOff.value = !call.video;
+            if (savedDocTitle === null) savedDocTitle = document.title;
+            document.title = `📞 Llamada de ${call.peer_name || call.caller_name || 'alguien'}`;
+            ringtone.start('incoming');
+            armRingTimeout();
+        });
+        channel.listen('.call.accepted', (payload) => {
+            const call = payload?.call;
+            if (!call || callData.value?.id !== call.id) return;
+            clearRingTimers();
+            callData.value = { ...callData.value, ...call, status: 'active' };
+            callPhase.value = 'active';
+        });
+        channel.listen('.call.declined', (payload) => {
+            const call = payload?.call;
+            if (!call || callData.value?.id !== call.id) return;
+            toast.message('Llamada rechazada');
+            resetCall();
+        });
+        channel.listen('.call.ended', (payload) => {
+            const call = payload?.call;
+            if (!call || callData.value?.id !== call.id) return;
+            toast.message('Llamada finalizada');
+            resetCall();
+        });
+        channel.listen('.call.missed', (payload) => {
+            const call = payload?.call;
+            if (!call || callData.value?.id !== call.id) return;
+            toast.message('Llamada perdida');
+            resetCall();
         });
         channel.error?.((err) => {
             console.warn('[Echo] canal notificaciones', err);
@@ -229,9 +504,23 @@ onMounted(() => {
     // Reintentar si Echo aún no estaba listo al montar
     setTimeout(subscribeNotifications, 800);
     window.addEventListener('keydown', onGlobalKeydown);
+    // Desbloquear AudioContext tras el primer clic/tecla (política de autoplay)
+    const unlock = () => {
+        try {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return;
+            const ctx = new Ctx();
+            ctx.resume().finally(() => ctx.close());
+        } catch { /* */ }
+        window.removeEventListener('pointerdown', unlock);
+        window.removeEventListener('keydown', unlock);
+    };
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
 });
 
 onUnmounted(() => {
+    clearRingTimers();
     unsubscribeNotifications();
     pausePoll();
     window.removeEventListener('keydown', onGlobalKeydown);
@@ -256,7 +545,17 @@ const viewNotification = async (notification) => {
         unreadCount.value = Math.max(0, unreadCount.value - 1);
         notificationsOpen.value = false;
         const ticketId = notification.data?.ticket_id;
-        if (ticketId) router.visit(`/tickets/board?card=${ticketId}`);
+        const type = notification.data?.type || notification.type || '';
+        if (!ticketId) return;
+        // Mensajes / menciones → bandeja; el resto → tablero
+        const toInbox = ['ticket_message', 'ticket_mentioned', 'ticket_created'].some(
+            (t) => String(type).includes(t),
+        );
+        if (toInbox) {
+            router.visit(`/tickets?chat=${ticketId}`);
+        } else {
+            router.visit(`/tickets/board?card=${ticketId}`);
+        }
     } catch {
         toast.error('No se pudo abrir la notificación');
     }
@@ -299,7 +598,7 @@ const fullBleed = computed(() => isBoard.value || isInbox.value);
 const isInbox = computed(() => currentPath.value === '/tickets' || /^\/tickets\/\d+/.test(currentPath.value));
 const isReports = computed(() => currentPath.value.startsWith('/reportes'));
 const isConfig = computed(() =>
-    ['/users', '/workspaces', '/departamentos', '/estados', '/roles', '/perfil'].some(
+    ['/users', '/workspaces', '/departamentos', '/estados', '/etiquetas', '/roles', '/ajustes', '/perfil'].some(
         (p) => currentPath.value === p || currentPath.value.startsWith(`${p}/`),
     ),
 );
@@ -317,11 +616,13 @@ watch(currentPath, () => {
 });
 
 const isActiveNav = (item) => {
+    if (item.match === 'home') return currentPath.value === '/' || currentPath.value.startsWith('/dashboard');
     if (item.match === 'board') return isBoard.value;
     if (item.match === 'inbox') return isInbox.value && !isBoard.value;
     if (item.match === 'reports') return isReports.value;
     if (item.match === 'portal') return currentPath.value.startsWith('/portal');
     if (item.match === 'notifs') return currentPath.value.startsWith('/notificaciones');
+    if (item.match === 'calls') return currentPath.value.startsWith('/llamadas');
     return currentPath.value === item.href || currentPath.value.startsWith(`${item.href}/`);
 };
 
@@ -356,9 +657,9 @@ const logout = () => router.post('/logout');
     <div class="workspace-shell flex min-h-screen bg-[#0f1419] text-[#E8EEF4]">
         <Toaster position="top-right" rich-colors theme="dark" />
 
-        <!-- Sidebar izquierda -->
+        <!-- Sidebar izquierda (desktop) -->
         <aside
-            class="sidebar sticky top-0 z-40 flex h-screen shrink-0 flex-col border-r border-[#2a3340] bg-[#12171d] transition-[width] duration-200"
+            class="sidebar sticky top-0 z-40 hidden h-screen shrink-0 flex-col border-r border-[#2a3340] bg-[#12171d] transition-[width] duration-200 lg:flex"
             :class="sidebarCollapsed ? 'w-[72px]' : 'w-[240px]'"
         >
             <div
@@ -368,7 +669,7 @@ const logout = () => router.post('/logout');
                 <img src="/images/LogoMono.png" alt="" class="h-8 w-8 shrink-0 object-contain" />
                 <div v-if="!sidebarCollapsed" class="min-w-0 flex-1">
                     <p class="truncate font-display text-sm font-semibold tracking-tight text-white">
-                        RM Consuegra
+                        {{ page.props.appSettings?.app_name || 'RM Consuegra' }}
                     </p>
                     <el-select
                         v-if="workspaces.length"
@@ -438,8 +739,28 @@ const logout = () => router.post('/logout');
                                 : 'text-[#8B9AAB] hover:bg-white/5 hover:text-[#E8EEF4]',
                         ]"
                     >
-                        <el-icon :size="20" class="shrink-0"><component :is="item.icon" /></el-icon>
+                        <span class="relative shrink-0">
+                            <el-icon :size="20"><component :is="item.icon" /></el-icon>
+                            <span
+                                v-if="item.match === 'inbox' && unreadChatsCount > 0"
+                                class="absolute -right-1.5 -top-1.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-[#25D366] px-1 text-[9px] font-extrabold text-[#052e16] shadow-[0_0_8px_rgba(37,211,102,0.55)]"
+                            >
+                                {{ unreadChatsCount > 9 ? '9+' : unreadChatsCount }}
+                            </span>
+                            <span
+                                v-else-if="item.match === 'notifs' && unreadCount > 0"
+                                class="absolute -right-1.5 -top-1.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-[#EF5C48] px-1 text-[9px] font-extrabold text-white shadow-[0_0_8px_rgba(239,92,72,0.55)]"
+                            >
+                                {{ unreadCount > 9 ? '9+' : unreadCount }}
+                            </span>
+                        </span>
                         <span v-if="!sidebarCollapsed" class="truncate">{{ item.label }}</span>
+                        <span
+                            v-if="!sidebarCollapsed && item.match === 'inbox' && unreadChatsCount > 0"
+                            class="ml-auto rounded-full bg-[#25D366]/20 px-1.5 py-0.5 text-[10px] font-bold text-[#25D366]"
+                        >
+                            {{ unreadChatsCount > 99 ? '99+' : unreadChatsCount }}
+                        </span>
                     </Link>
                 </el-tooltip>
 
@@ -654,8 +975,14 @@ const logout = () => router.post('/logout');
                     </el-button>
 
                     <div ref="notifRef" class="relative">
-                        <el-badge :value="unreadCount" :hidden="unreadCount < 1" :max="99">
-                            <el-button circle text class="!text-[#8B9AAB]" @click="notificationsOpen = !notificationsOpen">
+                        <el-badge :value="unreadCount" :hidden="unreadCount < 1" :max="99" type="danger">
+                            <el-button
+                                circle
+                                text
+                                class="!text-[#8B9AAB]"
+                                :class="unreadCount > 0 ? '!text-[#EF5C48]' : ''"
+                                @click="notificationsOpen = !notificationsOpen"
+                            >
                                 <el-icon :size="18"><Bell /></el-icon>
                             </el-button>
                         </el-badge>
@@ -722,14 +1049,77 @@ const logout = () => router.post('/logout');
             </header>
 
             <main
-                :class="fullBleed
-                    ? 'flex min-h-0 flex-1 flex-col overflow-hidden'
-                    : 'flex-1 overflow-auto px-4 py-4 sm:px-6'"
+                :class="[
+                    fullBleed
+                        ? 'flex min-h-0 flex-1 flex-col overflow-hidden'
+                        : 'flex-1 overflow-auto px-4 py-4 sm:px-6',
+                    'pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-4',
+                ]"
             >
                 <slot />
             </main>
         </div>
 
+        <!-- Nav flotante inferior (móvil) -->
+        <nav
+            class="fixed inset-x-0 bottom-0 z-50 border-t border-[#2a3340] bg-[#12171d]/95 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden"
+            aria-label="Navegación principal"
+        >
+            <ul class="mx-auto flex max-w-lg items-stretch justify-around gap-0.5 py-1.5">
+                <li v-for="item in mobileNavItems" :key="item.href" class="min-w-0 flex-1">
+                    <button
+                        type="button"
+                        class="flex w-full flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[10px] transition-colors"
+                        :class="isActiveNav(item)
+                            ? 'text-[#579DFF]'
+                            : 'text-[#8B9AAB] active:bg-white/5'"
+                        @click="go(item.href)"
+                    >
+                        <span class="relative">
+                            <el-icon :size="20"><component :is="item.icon" /></el-icon>
+                            <span
+                                v-if="item.match === 'inbox' && unreadChatsCount > 0"
+                                class="absolute -right-1.5 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#25D366] px-0.5 text-[8px] font-extrabold text-[#052e16] shadow-[0_0_6px_rgba(37,211,102,0.5)]"
+                            >
+                                {{ unreadChatsCount > 9 ? '9+' : unreadChatsCount }}
+                            </span>
+                            <span
+                                v-else-if="item.match === 'notifs' && unreadCount > 0"
+                                class="absolute -right-1.5 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#EF5C48] px-0.5 text-[8px] font-extrabold text-white shadow-[0_0_6px_rgba(239,92,72,0.5)]"
+                            >
+                                {{ unreadCount > 9 ? '9+' : unreadCount }}
+                            </span>
+                        </span>
+                        <span class="truncate">{{ item.label }}</span>
+                    </button>
+                </li>
+                <li v-if="can('create tickets')" class="min-w-0 flex-1">
+                    <button
+                        type="button"
+                        class="flex w-full flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[10px] text-[#57D9A3] active:bg-white/5"
+                        @click="openCreateTicket"
+                    >
+                        <el-icon :size="20"><Plus /></el-icon>
+                        <span>Nuevo</span>
+                    </button>
+                </li>
+            </ul>
+        </nav>
+
         <CreateTicketModal ref="createModalRef" />
+
+        <CallOverlay
+            :phase="callPhase"
+            :call="callData"
+            :token="callToken"
+            :muted="callMuted"
+            :camera-off="callCameraOff"
+            @accept="acceptCall"
+            @decline="declineCall"
+            @end="endCall"
+            @failed="onCallFailed"
+            @update:muted="(v) => (callMuted = v)"
+            @update:camera-off="(v) => (callCameraOff = v)"
+        />
     </div>
 </template>

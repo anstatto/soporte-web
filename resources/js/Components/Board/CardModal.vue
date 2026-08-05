@@ -1,10 +1,13 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import axios from 'axios';
 import { toast } from 'vue-sonner';
 import { ElMessageBox } from 'element-plus';
 import { formatDate, timeAgo } from '@/Composables/useDate';
+import { usePermissions } from '@/Composables/usePermissions';
 import { usePage } from '@inertiajs/vue3';
+import AudioMessage from '@/Components/Chat/AudioMessage.vue';
+import VoiceRecorder from '@/Components/Chat/VoiceRecorder.vue';
 
 const props = defineProps({
     ticketId: { type: [Number, String], required: true },
@@ -17,6 +20,11 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'updated', 'deleted']);
 const page = usePage();
+const { can } = usePermissions();
+const appCall = inject('appCall', null);
+const livekitEnabled = computed(() => !!page.props.livekit?.enabled);
+const allowVideo = computed(() => !!page.props.livekit?.allow_video);
+const canUseCalls = computed(() => can('use calls') || !!page.props.auth?.user?.is_admin);
 
 const loading = ref(true);
 const ticket = ref(null);
@@ -85,6 +93,34 @@ const msgTime = (iso) => {
 
 const assignedIds = computed(() => new Set((ticket.value?.asignados || []).map((a) => a.id)));
 const selectedEtiquetaIds = computed(() => new Set((ticket.value?.etiquetas || []).map((e) => e.id)));
+
+const callTargets = computed(() => {
+    const map = new Map();
+    const push = (u) => {
+        if (!u?.id || Number(u.id) === meId.value) return;
+        map.set(Number(u.id), { id: u.id, name: u.name, username: u.username });
+    };
+    (ticket.value?.asignados || []).forEach(push);
+    push(ticket.value?.user);
+    return [...map.values()];
+});
+
+const startCardCall = (userId, video = false) => {
+    if (!livekitEnabled.value) {
+        toast.error('Llamadas desactivadas. Configúralas en Ajustes (LiveKit Cloud gratis).');
+        return;
+    }
+    if (video && !allowVideo.value) {
+        toast.message('Video desactivado (modo económico). Usa audio o actívalo en Ajustes.');
+        video = false;
+    }
+    if (!appCall || !ticket.value) return;
+    appCall.start({
+        calleeId: userId,
+        video,
+        context: { type: 'ticket', id: ticket.value.id },
+    });
+};
 
 const labelCatalog = computed(() =>
     (catalogEtiquetas.value.length ? catalogEtiquetas.value : props.etiquetas) || [],
@@ -456,13 +492,30 @@ const sendComment = async () => {
     sending.value = true;
     const form = new FormData();
     if (text) form.append('contenido', text);
-    if (pendingImage.value) form.append('imagen', pendingImage.value);
+    if (pendingImage.value) {
+        const f = pendingImage.value;
+        if ((f.type || '').startsWith('image/')) form.append('imagen', f);
+        else form.append('archivo', f);
+    }
+
+    const isAudio = pendingImage.value && (
+        (pendingImage.value.type || '').startsWith('audio/')
+        || pendingImage.value.type === 'video/webm'
+        || /\.(webm|ogg|mp3|m4a|wav|aac)$/i.test(pendingImage.value.name || '')
+    );
 
     const tempId = `tmp-${Date.now()}`;
     const optimistic = {
         id: tempId,
         contenido: text || null,
         imagen_url: imagePreview.value,
+        adjunto: isAudio
+            ? {
+                kind: 'audio',
+                url: URL.createObjectURL(pendingImage.value),
+                nombre: pendingImage.value.name,
+            }
+            : null,
         user: { id: page.props.auth.user.id, name: page.props.auth.user.name },
         created_at: new Date().toISOString(),
         mine: true,
@@ -506,6 +559,13 @@ const sendComment = async () => {
     } finally {
         sending.value = false;
     }
+};
+
+const onVoiceRecorded = async (file) => {
+    clearImage();
+    pendingImage.value = file;
+    imagePreview.value = null;
+    await sendComment();
 };
 
 const remove = async () => {
@@ -627,6 +687,13 @@ const onKey = (e) => {
                                         class="whitespace-pre-wrap leading-relaxed"
                                         v-html="renderMentions(c.contenido)"
                                     />
+                                    <div v-if="c.adjunto?.kind === 'audio' && c.adjunto?.url" class="mt-1.5">
+                                        <AudioMessage
+                                            :src="c.adjunto.url"
+                                            :mine="isMine(c)"
+                                            :name="c.adjunto.nombre || 'Nota de voz'"
+                                        />
+                                    </div>
                                     <a
                                         v-if="c.imagen_url"
                                         :href="c.imagen_url"
@@ -691,18 +758,20 @@ const onKey = (e) => {
                             <div class="flex items-end gap-1.5 rounded-[24px] bg-[#1a222c] px-1.5 py-1 ring-1 ring-[#2a3340]">
                                 <label
                                     class="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#8B9AAB] transition hover:bg-white/5 hover:text-white"
-                                    title="Adjuntar imagen"
+                                    title="Adjuntar imagen o audio"
                                 >
                                     <el-icon :size="18"><Paperclip /></el-icon>
-                                    <input type="file" accept="image/*" class="hidden" @change="onFilePick" />
+                                    <input type="file" accept="image/*,audio/*,.webm,.ogg,.mp3,.m4a,.wav" class="hidden" @change="onFilePick" />
                                 </label>
+
+                                <VoiceRecorder @recorded="onVoiceRecorded" />
 
                                 <textarea
                                     ref="composerRef"
                                     v-model="comment"
                                     rows="1"
                                     class="max-h-28 min-h-[36px] flex-1 resize-none bg-transparent py-2 text-sm text-white placeholder:text-[#8B9AAB] focus:outline-none"
-                                    placeholder="Mensaje"
+                                    placeholder="Mensaje o nota de voz"
                                     @paste="onPaste"
                                     @input="detectMention"
                                     @keydown="onComposerKeydown"
@@ -823,7 +892,81 @@ const onKey = (e) => {
                     </div>
 
                     <div>
-                        <p class="mb-2 text-[10px] font-bold uppercase tracking-wider text-white/40">Miembros</p>
+                        <div class="mb-2 flex items-center justify-between gap-2">
+                            <p class="text-[10px] font-bold uppercase tracking-wider text-white/40">Miembros</p>
+                            <div v-if="canUseCalls && callTargets.length" class="flex items-center gap-1">
+                                <el-dropdown
+                                    v-if="callTargets.length > 1"
+                                    trigger="click"
+                                    @command="(id) => startCardCall(id, false)"
+                                >
+                                    <el-button
+                                        size="small"
+                                        circle
+                                        :title="livekitEnabled ? 'Llamar' : 'Configura LiveKit en .env'"
+                                        :class="!livekitEnabled ? 'opacity-45' : ''"
+                                    >
+                                        <el-icon><Phone /></el-icon>
+                                    </el-button>
+                                    <template #dropdown>
+                                        <el-dropdown-menu>
+                                            <el-dropdown-item
+                                                v-for="p in callTargets"
+                                                :key="p.id"
+                                                :command="p.id"
+                                            >
+                                                Llamar a {{ p.name }}
+                                            </el-dropdown-item>
+                                        </el-dropdown-menu>
+                                    </template>
+                                </el-dropdown>
+                                <el-button
+                                    v-else
+                                    size="small"
+                                    circle
+                                    :title="livekitEnabled ? 'Llamar' : 'Configura LiveKit en .env'"
+                                    :class="!livekitEnabled ? 'opacity-45' : ''"
+                                    @click="startCardCall(callTargets[0].id, false)"
+                                >
+                                    <el-icon><Phone /></el-icon>
+                                </el-button>
+                                <el-dropdown
+                                    v-if="allowVideo && callTargets.length > 1"
+                                    trigger="click"
+                                    @command="(id) => startCardCall(id, true)"
+                                >
+                                    <el-button
+                                        size="small"
+                                        circle
+                                        :title="livekitEnabled ? 'Videollamada' : 'Configura LiveKit en Ajustes'"
+                                        :class="!livekitEnabled ? 'opacity-45' : ''"
+                                    >
+                                        <el-icon><VideoCamera /></el-icon>
+                                    </el-button>
+                                    <template #dropdown>
+                                        <el-dropdown-menu>
+                                            <el-dropdown-item
+                                                v-for="p in callTargets"
+                                                :key="'v-' + p.id"
+                                                :command="p.id"
+                                            >
+                                                Video con {{ p.name }}
+                                            </el-dropdown-item>
+                                        </el-dropdown-menu>
+                                    </template>
+                                </el-dropdown>
+                                <el-button
+                                    v-else-if="allowVideo"
+                                    size="small"
+                                    circle
+                                    :title="livekitEnabled ? 'Videollamada' : 'Configura LiveKit en Ajustes'"
+                                    :class="!livekitEnabled ? 'opacity-45' : ''"
+                                    @click="startCardCall(callTargets[0].id, true)"
+                                >
+                                    <el-icon><VideoCamera /></el-icon>
+                                </el-button>
+                            </div>
+                        </div>
                         <div class="flex flex-wrap items-center gap-1.5">
                             <div
                                 v-for="m in ticket.asignados"

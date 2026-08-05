@@ -1,0 +1,16 @@
+[Unit]
+Description=Soporte-web queue worker
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+Restart=always
+RestartSec=5
+WorkingDirectory=/var/www/soporte-web
+ExecStart=/usr/bin/php /var/www/soporte-web/artisan queue:work database --sleep=3 --tries=3 --max-time=3600
+Nice=10
+
+[Install]
+WantedBy=multi-user.target
